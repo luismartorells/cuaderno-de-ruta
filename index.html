@@ -1,0 +1,1396 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Cuaderno de Ruta</title>
+<meta name="description" content="Bitácora de viaje en moto: etapas, rutas, gastos y diario.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#252B31">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cuaderno">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+/* Layout: bitácora de una columna; cabecera fija oscura (asfalto) con estado de guardado y pestañas; tarjetas por bloque; el diario es un feed de publicaciones. */
+:root{
+  --bg:#ECEEEA; --surface:#FAFBF8; --sunk:#E2E5E0; --ink:#171A1E; --muted:#5D656E; --line:#CDD2CB;
+  --accent:#C2410C; --accent-soft:#F6DED0; --on-accent:#FFFFFF; --road:#252B31; --on-road:#EEF0EC; --road-chip:#353C44;
+  --ok:#2E7A4C; --warn:#A86A12; --bad:#B42318;
+  --map-bg:#E3E8E1; --map-grid:#D2D9CF; --casing:#FFFFFF;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111417; --surface:#1A1E23; --sunk:#14181C; --ink:#E8EBE6; --muted:#98A1AB; --line:#2D333A;
+  --accent:#F0793A; --accent-soft:#3A2418; --on-accent:#1A0E07; --road:#0A0C0E; --on-road:#E8EBE6; --road-chip:#22282E;
+  --ok:#5CC48A; --warn:#E3A84A; --bad:#F2756A;
+  --map-bg:#161B20; --map-grid:#222930; --casing:#0A0C0E; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111417; --surface:#1A1E23; --sunk:#14181C; --ink:#E8EBE6; --muted:#98A1AB; --line:#2D333A;
+  --accent:#F0793A; --accent-soft:#3A2418; --on-accent:#1A0E07; --road:#0A0C0E; --on-road:#E8EBE6; --road-chip:#22282E;
+  --ok:#5CC48A; --warn:#E3A84A; --bad:#F2756A;
+  --map-bg:#161B20; --map-grid:#222930; --casing:#0A0C0E; color-scheme:dark}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+[hidden]{display:none!important}
+img{max-width:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45;-webkit-tap-highlight-color:transparent}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--road)}
+.wrap{max-width:760px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--road);color:var(--on-road)}
+header .bar{display:flex;align-items:center;gap:12px;justify-content:space-between;padding-block:12px 6px}
+.brand{font-family:var(--display);font-weight:700;font-size:1.5rem;letter-spacing:.02em;text-transform:uppercase;line-height:1;min-width:0}
+.brand small{display:block;font-family:var(--mono);font-weight:400;font-size:.68rem;letter-spacing:.06em;opacity:.7;margin-top:3px;text-transform:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sync{display:flex;align-items:center;gap:7px;font-size:.78rem;border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:5px 10px;white-space:nowrap;background:transparent;color:inherit;font-family:var(--body);cursor:pointer}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)} .dot.busy{background:var(--accent);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.3}}
+@media (prefers-reduced-motion:reduce){.dot.busy{animation:none}}
+nav.tabs{display:flex;gap:2px}
+nav.tabs button{flex:1;min-width:0;background:transparent;border:0;color:inherit;opacity:.65;font-family:var(--display);font-weight:600;font-size:1.02rem;letter-spacing:.05em;text-transform:uppercase;padding:9px 4px 11px;border-bottom:3px solid transparent;cursor:pointer}
+nav.tabs button[aria-selected="true"]{opacity:1;border-bottom-color:var(--accent)}
+main{padding-block:18px calc(70px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:18px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.cardhead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+h2{font-family:var(--display);font-weight:700;font-size:1.35rem;letter-spacing:.03em;text-transform:uppercase;margin:0;text-wrap:balance}
+h3{font-family:var(--display);font-weight:600;font-size:1.02rem;letter-spacing:.05em;text-transform:uppercase;margin:0;color:var(--muted)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.row>*{min-width:0}
+.grow{flex:1 1 150px}
+label{display:flex;flex-direction:column;gap:4px;font-size:.74rem;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+label.check{flex-direction:row;align-items:center;gap:10px;text-transform:none;letter-spacing:0;font-size:.95rem;font-weight:500;color:var(--ink);cursor:pointer}
+label.check input{width:20px;height:20px;flex:none;accent-color:var(--accent)}
+input,select,textarea{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:10px 11px;width:100%;min-width:0;text-transform:none;letter-spacing:normal;font-weight:400}
+textarea{min-height:64px;resize:vertical}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,label:focus-within>.addtile{outline:2px solid var(--accent);outline-offset:2px}
+.btn{font:inherit;font-weight:600;border-radius:7px;padding:10px 14px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;white-space:nowrap}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.ghost{background:transparent}
+.btn.small{padding:6px 10px;font-size:.85rem}
+.btn.danger{color:var(--bad);border-color:var(--bad);background:transparent}
+.btn:disabled{opacity:.5;cursor:default}
+.datebar{display:flex;gap:8px;align-items:center}
+.datebar input{flex:1;font-family:var(--mono)}
+.datebar .btn{padding:10px 12px}
+.dayhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.daylabel{font-family:var(--display);font-size:1.6rem;font-weight:700;line-height:1.1}
+.daylabel::first-letter{text-transform:uppercase}
+.tripday{font-family:var(--mono);font-size:.8rem;color:var(--muted)}
+.odo{display:inline-flex;gap:2px;background:var(--road);padding:4px;border-radius:5px;vertical-align:middle}
+.odo span{font-family:var(--mono);font-weight:500;color:var(--on-road);background:var(--road-chip);min-width:1.05em;text-align:center;border-radius:2px;padding:1px 2px;font-size:1.02rem}
+.odo span.lit{background:var(--accent);color:var(--on-accent)}
+.odo-wrap{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:.8rem;color:var(--muted);flex-wrap:wrap}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:inherit;font-size:.86rem;padding:7px 11px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.chip-group{display:flex;flex-direction:column;gap:6px}
+.chip-group b{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.exp-list{display:flex;flex-direction:column}
+.exp{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:center;padding:11px 2px;border-top:1px solid var(--line);cursor:pointer;background:transparent;border-left:0;border-right:0;border-bottom:0;text-align:left;font:inherit;color:inherit;width:100%}
+.exp:first-child{border-top:0}
+.exp .tag{font-size:.72rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;background:var(--accent-soft);color:var(--ink);padding:3px 8px;border-radius:4px}
+.exp .desc{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.92rem}
+.exp .amt{text-align:right;font-family:var(--mono);font-size:.92rem;font-variant-numeric:tabular-nums}
+.exp .amt small{display:block;color:var(--muted);font-size:.76rem}
+.exp.editing{background:var(--accent-soft)}
+.total{display:flex;justify-content:space-between;align-items:baseline;border-top:2px solid var(--ink);padding-top:10px;font-family:var(--display);font-size:1.3rem;font-weight:700}
+.total .mono{font-family:var(--mono);font-size:1.1rem}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.hint{font-size:.86rem;color:var(--muted);margin:0}
+.err{color:var(--bad);font-size:.88rem;margin:0}
+.okmsg{color:var(--ok);font-size:.88rem;margin:0}
+.seg{display:flex;background:var(--sunk);border-radius:8px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg button{flex:1;font:inherit;font-size:.9rem;font-weight:600;border:0;background:transparent;color:var(--muted);padding:8px 6px;border-radius:6px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.stat{background:var(--surface);padding:12px 14px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.stat b{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.stat span{font-family:var(--mono);font-size:1.25rem;font-weight:500;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.bars{display:flex;flex-direction:column;gap:9px}
+.bar-row{display:grid;grid-template-columns:minmax(90px,130px) 1fr auto;gap:10px;align-items:center;font-size:.9rem}
+.track{height:10px;background:var(--sunk);border-radius:3px;overflow:hidden}
+.fill{height:100%;background:var(--accent);border-radius:3px}
+.g-comidas{background:var(--warn)} .g-moto{background:var(--accent)} .g-tramites{background:var(--ok)} .g-otros{background:var(--muted)}
+.bar-row .mono{text-align:right;font-size:.85rem}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.78rem;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.88rem}
+th{text-align:left;font-size:.7rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.clickable{cursor:pointer}
+tr.clickable:hover td{background:var(--sunk)}
+.periodnav{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.periodnav .lbl{font-family:var(--display);font-weight:700;font-size:1.3rem;text-align:center;flex:1}
+.periodnav .lbl::first-letter{text-transform:uppercase}
+.empty{border:1px dashed var(--line);border-radius:10px;padding:18px;color:var(--muted);text-align:center;font-size:.92rem}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:.9rem;z-index:20;max-width:calc(100% - 32px)}
+.confirmbox{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--accent-soft);padding:10px;border-radius:8px;font-size:.92rem}
+.kv{display:grid;grid-template-columns:1fr auto;gap:6px 12px;font-size:.9rem}
+.kv b{text-align:right}
+.rate-row{display:grid;grid-template-columns:60px 1fr auto;gap:8px;align-items:center}
+.ratebox{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center}
+.ratebox span{font-family:var(--mono);font-size:.9rem;color:var(--muted)}
+/* Ruta tipo Strava */
+.route{display:flex;flex-direction:column;gap:10px}
+canvas.map{display:block;width:100%;border-radius:8px;background:var(--map-bg)}
+.mapwrap{position:relative}
+.leaf{width:100%;border-radius:8px;overflow:hidden;position:relative;z-index:0;isolation:isolate;background:var(--map-bg)}
+.leaflet-container{font-family:var(--body)}
+.mapbtn{position:absolute;right:8px;top:8px;z-index:2;font:inherit;font-size:.8rem;font-weight:600;border:0;border-radius:6px;padding:6px 10px;background:rgba(23,26,30,.78);color:#fff;cursor:pointer}
+.bigmap{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column}
+.bigmap header{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--road);color:var(--on-road);padding:calc(10px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px))}
+.bigmap header b{font-family:var(--display);font-size:1.2rem;text-transform:uppercase;letter-spacing:.03em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bigmap .leaf,.bigmap canvas{flex:1;border-radius:0}
+canvas.prof{display:block;width:100%;height:72px}
+.rstats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 12px}
+.rstat b{display:block;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.rstat span{font-family:var(--mono);font-size:1.02rem;font-variant-numeric:tabular-nums}
+/* Diario */
+.feedhead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.post{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.phead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:12px 14px}
+.pplace{font-family:var(--display);font-weight:700;font-size:1.25rem;line-height:1.1;overflow-wrap:anywhere}
+.pmeta{font-size:.8rem;color:var(--muted);font-family:var(--mono)}
+.pmeta::first-letter{text-transform:uppercase}
+.pacts{display:flex;gap:6px;flex:none}
+.carwrap{position:relative;background:var(--road)}
+.car{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}
+.car::-webkit-scrollbar{display:none}
+.car img{flex:0 0 100%;width:100%;aspect-ratio:4/5;max-height:72vh;object-fit:cover;scroll-snap-align:center;display:block;background:var(--road-chip);color:var(--on-road);font-size:.85rem}
+.carcount{position:absolute;top:10px;right:max(10px,env(safe-area-inset-right,0px));background:rgba(0,0,0,.55);color:#fff;font-family:var(--mono);font-size:.75rem;padding:3px 8px;border-radius:999px}
+.ptext{padding:12px 14px 4px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:1rem}
+.more{background:none;border:0;color:var(--accent);font:inherit;font-weight:600;padding:0 14px 8px;cursor:pointer;text-align:left}
+.post .route{padding:10px 14px 14px;border-top:1px solid var(--line);margin-top:8px}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
+.pthumb{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--sunk)}
+.pthumb img{width:100%;height:100%;object-fit:cover;display:block}
+.pthumb .x{position:absolute;top:4px;right:4px;width:28px;height:28px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:1rem;line-height:1;cursor:pointer}
+.pthumb .l{position:absolute;bottom:4px;left:4px;border:0;border-radius:5px;background:rgba(0,0,0,.6);color:#fff;font-size:.72rem;padding:3px 6px;cursor:pointer}
+.pthumb .cov{position:absolute;bottom:4px;left:4px;background:var(--accent);color:var(--on-accent);font-size:.68rem;font-weight:600;padding:2px 6px;border-radius:4px}
+.addtile{aspect-ratio:1;border:2px dashed var(--line);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--muted);font-size:.8rem;text-transform:none;letter-spacing:0;cursor:pointer;text-align:center;padding:6px}
+.addtile b{font-size:1.6rem;line-height:1;color:var(--accent)}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.trashrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:.9rem}
+.trashrow:first-child{border-top:0}
+.trashrow span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.progress{font-family:var(--mono);font-size:.85rem;color:var(--muted);margin:0}
+@media (max-width:420px){.bar-row{grid-template-columns:86px 1fr auto}.daylabel{font-size:1.35rem}.rstats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="bar">
+      <div class="brand">Cuaderno de Ruta<small id="tripline">Bitácora de viaje en moto</small></div>
+      <button class="sync" id="syncBtn" type="button" aria-live="polite"><span class="dot busy" id="syncDot"></span><span id="syncTxt">Abriendo…</span></button>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="dia" aria-selected="true" id="tab-dia">Día</button>
+      <button role="tab" data-tab="diario" aria-selected="false" id="tab-diario">Diario</button>
+      <button role="tab" data-tab="resumen" aria-selected="false" id="tab-resumen">Resumen</button>
+      <button role="tab" data-tab="datos" aria-selected="false" id="tab-datos">Datos</button>
+    </nav>
+  </div>
+</header>
+<main class="wrap" id="main"><div class="empty">Abriendo el cuaderno…</div></main>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+/* ================= Constantes ================= */
+const DBNAME="cuadernoRuta", MIRROR="cuadernoRuta.v2.mirror", LEGACY="cuadernoRuta.v1", DRAFT_KEY="cuadernoRuta.draft";
+const LIB={jspdf:"https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js",pptx:"https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"};
+const CATS=[
+  {k:"desayuno",n:"Desayuno",g:"comidas"},{k:"comida",n:"Comida",g:"comidas"},{k:"merienda",n:"Merienda",g:"comidas"},{k:"cena",n:"Cena",g:"comidas"},
+  {k:"gasolina",n:"Gasolina",g:"moto"},{k:"recambios",n:"Recambios",g:"moto"},{k:"taller",n:"Taller",g:"moto"},
+  {k:"seguro",n:"Seguro moto",g:"tramites"},{k:"visado",n:"Visado",g:"tramites"},
+  {k:"alojamiento",n:"Alojamiento",g:"otros"},{k:"peajes",n:"Peajes y ferris",g:"otros"},{k:"ropa",n:"Ropa y equipo",g:"otros"},{k:"otros",n:"Otros",g:"otros"}];
+const GROUPS={comidas:"Comidas",moto:"Moto",tramites:"Trámites",otros:"Extras"};
+const GROUP_RGB={comidas:[168,106,18],moto:[194,65,12],tramites:[46,122,76],otros:[93,101,110]};
+const CAT=Object.fromEntries(CATS.map(c=>[c.k,c]));
+const CURS=["EUR","USD","GBP","CHF","MAD","TND","EGP","TRY","GEL","AMD","AZN","KZT","UZS","KGS","TJS","RUB","IRR","PKR","INR","NPR","BTN","LKR","THB","LAK","KHR","VND","MYR","IDR","SGD","MNT","CNY","JPY","KRW","AUD","NZD","AED","OMR","SAR","JOD","ZAR","NAD","BWP","KES","TZS","MXN","GTQ","CRC","COP","PEN","BOB","CLP","ARS","UYU","BRL","PYG","NOK","SEK","DKK","ISK","PLN","CZK","HUF","RON","RSD","BAM","MKD","ALL","MDL","UAH"];
+const PAL_LIGHT={bg:"#E6EAE3",grid:"#D3D9D0",line:"#C2410C",casing:"#FFFFFF",start:"#2E7A4C",end:"#171A1E",text:"#5D656E"};
+const PAL_DARK={bg:"#2B3138",grid:"#353C44",line:"#F0793A",casing:"#14181C",start:"#5CC48A",end:"#E8EBE6",text:"#98A1AB"};
+
+/* ================= Estado ================= */
+const R=new Map();            // clave -> registro (d_FECHA, t_FECHA, p_ID, settings, backups)
+const pending=new Set();      // claves por subir a la nube
+let meta={lastSnap:"",lastSnapAt:0,lastSyncAt:0,lastStateAt:0,cfg:null};
+let idb=null, idbOk=false, mirrorOk=true, booted=false, persistent=null;
+const memPhotos=new Map();
+const ui={tab:"dia",date:todayStr(),cat:"desayuno",editId:null,confirmDel:null,period:"semana",anchor:todayStr(),
+  importResult:null,importMsg:"",importErr:"",dataMsg:"",needsRender:false,draft:null,draftErr:"",confirmPost:null,confirmTrack:false,
+  dayRouteMsg:"",dayRouteErr:"",xMsg:"",xBusy:false,xPer:"todo",xFrom:"",xTo:"",xReady:null,expanded:new Set(),driveMsg:"",driveErr:"",driveBusy:false,editConn:false,cfgUrl:null,cfgKey:null,copies:null};
+
+/* ================= Utilidades ================= */
+function todayStr(){ return ymd(new Date()); }
+function ymd(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function parseYmd(s){ const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); }
+function addDays(s,n){ const d=parseYmd(s); d.setDate(d.getDate()+n); return ymd(d); }
+const DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function num(v){ if(v===""||v==null) return null; const n=Number(String(v).replace(",",".")); return Number.isFinite(n)?n:null; }
+function r1(n){ return Math.round(n*10)/10; }
+function r2(n){ return Math.round(n*100)/100; }
+const fEur=new Intl.NumberFormat("es-ES",{style:"currency",currency:"EUR"});
+const fNum=new Intl.NumberFormat("es-ES",{maximumFractionDigits:2});
+const fNum1=new Intl.NumberFormat("es-ES",{maximumFractionDigits:1});
+const fKm=new Intl.NumberFormat("es-ES",{maximumFractionDigits:0});
+function eur(n){ return fEur.format(n||0); }
+function money(n,cur){ try{ return new Intl.NumberFormat("es-ES",{style:"currency",currency:cur}).format(n); }catch(e){ return fNum.format(n)+" "+cur; } }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+function longDate(s){ return parseYmd(s).toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long",year:"numeric"}); }
+function shortDate(s){ return parseYmd(s).toLocaleDateString("es-ES",{weekday:"short",day:"numeric",month:"short"}); }
+function shortDateY(s){ return parseYmd(s).toLocaleDateString("es-ES",{day:"numeric",month:"short",year:"numeric"}); }
+function cap(s){ s=String(s||""); return s.charAt(0).toUpperCase()+s.slice(1); }
+function stamp(prev){ return Math.max(Date.now(),(prev||0)+1); }
+function dur(sec){ if(sec==null||!Number.isFinite(sec)) return "—"; let h=Math.floor(sec/3600), m=Math.round((sec%3600)/60); if(m===60){h++;m=0;} return h? h+" h "+String(m).padStart(2,"0")+" min" : m+" min"; }
+function eq(a,b){ return JSON.stringify(a)===JSON.stringify(b); }
+let toastT; function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true,2800); }
+function withTimeout(p,ms){ return Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej({code:"timeout",message:"Sin respuesta"}),ms))]); }
+function loadImg(src){ return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error("img")); i.src=src; }); }
+const libP={};
+function loadScript(src){ if(libP[src]) return libP[src]; libP[src]=new Promise((res,rej)=>{ const s=document.createElement("script"); s.src=src; s.onload=()=>res(); s.onerror=()=>{ delete libP[src]; s.remove(); rej(new Error("No se pudo cargar la herramienta de exportación. Hace falta conexión a internet.")); }; document.head.appendChild(s); }); return libP[src]; }
+
+/* ================= Validación de registros ================= */
+function sExp(e){
+  if(!e||typeof e!=="object") return null;
+  const amount=num(e.amount), ev=num(e.eur); if(amount==null||ev==null) return null;
+  const cur=String(e.cur||"EUR").toUpperCase(); const at=Number(e.at)||0;
+  return {id:String(e.id||uid()).slice(0,40),cat:CAT[e.cat]?e.cat:"otros",desc:String(e.desc||"").slice(0,300),amount:r2(amount),
+    cur:/^[A-Z]{3}$/.test(cur)?cur:"EUR",rate:num(e.rate),eur:r2(ev),at,u:Number(e.u)||at,del:!!e.del};
+}
+function sDay(date,d){
+  if(!DATE_RE.test(date)||!d||typeof d!=="object") return null;
+  const ex=(Array.isArray(d.expenses)?d.expenses:[]).map(sExp).filter(Boolean).sort((a,b)=>a.at-b.at||(a.id<b.id?-1:a.id>b.id?1:0));
+  const km=num(d.km); const up=Number(d.updatedAt)||0;
+  return {kind:"day",date,from:String(d.from||"").slice(0,120),to:String(d.to||"").slice(0,120),km:km==null?null:Math.max(0,r2(km)),
+    country:String(d.country||"").slice(0,80),notes:String(d.notes||"").slice(0,20000),fAt:Number(d.fAt)||up,expenses:ex,updatedAt:up};
+}
+function sTrack(date,t){
+  if(!DATE_RE.test(date)||!t||typeof t!=="object") return null;
+  const pts=(Array.isArray(t.pts)?t.pts:[]).filter(p=>Array.isArray(p)&&Number.isFinite(p[0])&&Number.isFinite(p[1])&&Math.abs(p[0])<=90&&Math.abs(p[1])<=180)
+    .slice(0,2000).map(p=>[+p[0],+p[1],Number.isFinite(p[2])?+p[2]:0,Number.isFinite(p[3])?+p[3]:null]);
+  const st=t.stats||{}; const n=k=>num(st[k]);
+  return {kind:"track",date,t0:Number(t.t0)||0,pts,stats:{km:n("km")||0,moving:n("moving"),elapsed:n("elapsed"),avg:n("avg"),max:n("max"),gain:n("gain"),approx:!!st.approx},
+    src:String(t.src||"").slice(0,40),del:!!t.del,updatedAt:Number(t.updatedAt)||0};
+}
+function sPost(id,p){
+  if(!p||typeof p!=="object"||!/^[A-Za-z0-9_-]{1,60}$/.test(id)) return null;
+  const photos=(Array.isArray(p.photos)?p.photos:[]).filter(x=>x&&x.pid).slice(0,10)
+    .map(x=>({pid:String(x.pid).slice(0,40),w:Number(x.w)||0,h:Number(x.h)||0,asset:x.asset?String(x.asset).slice(0,64):null}));
+  return {kind:"post",id,date:DATE_RE.test(p.date)?p.date:todayStr(),place:String(p.place||"").slice(0,160),text:String(p.text||"").slice(0,200000),
+    photos,route:p.route!==false,createdAt:Number(p.createdAt)||0,updatedAt:Number(p.updatedAt)||0,del:!!p.del,delAt:Number(p.delAt)||0};
+}
+function sSettings(s){
+  const out={kind:"settings",rates:{},updatedAt:Number(s&&s.updatedAt)||0};
+  if(s&&s.rates&&typeof s.rates==="object") for(const k of Object.keys(s.rates).sort()){ const v=s.rates[k]; const r=num(v&&v.rate); if(r&&r>0&&/^[A-Z]{3}$/.test(k)) out.rates[k]={rate:r,date:String(v.date||"")}; }
+  return out;
+}
+function sBackups(b){
+  const items=(b&&Array.isArray(b.items)?b.items:[]).filter(i=>i&&i.id).map(i=>({id:String(i.id).slice(0,64),at:Number(i.at)||0,bytes:Number(i.bytes)||0})).sort((a,c)=>a.at-c.at);
+  return {kind:"backups",items,updatedAt:Number(b&&b.updatedAt)||0};
+}
+function sanitize(key,rec){
+  if(typeof key!=="string"||!rec) return null;
+  if(key.startsWith("d_")) return sDay(key.slice(2),rec);
+  if(key.startsWith("t_")) return sTrack(key.slice(2),rec);
+  if(key.startsWith("p_")) return sPost(key.slice(2),rec);
+  if(key==="settings") return sSettings(rec);
+  if(key==="backups") return sBackups(rec);
+  return null;
+}
+function newerFirst(a,b,f){ f=f||"updatedAt"; if(a[f]>b[f]) return [a,b]; if(b[f]>a[f]) return [b,a]; return JSON.stringify(a)>=JSON.stringify(b)?[a,b]:[b,a]; }
+/* Fusión: nunca se pierde nada. Los gastos se unen por id; un registro solo se sustituye por una versión más reciente. */
+function mergeRec(key,a,b){
+  if(!a) return b; if(!b) return a;
+  if(key.startsWith("d_")){
+    const [f]=newerFirst(a,b,"fAt"); const map=new Map();
+    for(const e of [...a.expenses,...b.expenses]){ const p=map.get(e.id); if(!p||e.u>p.u||(e.u===p.u&&JSON.stringify(e)>JSON.stringify(p))) map.set(e.id,e); }
+    return sDay(f.date,{...f,expenses:[...map.values()],updatedAt:Math.max(a.updatedAt,b.updatedAt)});
+  }
+  if(key==="settings"){ const [n,o]=newerFirst(a,b); return sSettings({rates:{...o.rates,...n.rates},updatedAt:n.updatedAt}); }
+  if(key==="backups"){ const m=new Map(); [...a.items,...b.items].forEach(i=>m.set(i.id,i)); return sBackups({items:[...m.values()],updatedAt:Math.max(a.updatedAt,b.updatedAt)}); }
+  if(key.startsWith("p_")){
+    const [n,o]=newerFirst(a,b); const m=clone(n);
+    for(const ph of m.photos) if(!ph.asset){ const f=o.photos.find(x=>x.pid===ph.pid); if(f&&f.asset) ph.asset=f.asset; }
+    return sPost(m.id,m);
+  }
+  return newerFirst(a,b)[0];
+}
+
+/* ================= Almacén local (IndexedDB + copia espejo) ================= */
+function idbOpen(){ return new Promise(res=>{ try{ const rq=indexedDB.open(DBNAME,1);
+  rq.onupgradeneeded=()=>{ const d=rq.result; ["kv","photos","snaps"].forEach(s=>{ if(!d.objectStoreNames.contains(s)) d.createObjectStore(s); }); };
+  rq.onsuccess=()=>res(rq.result); rq.onerror=()=>res(null); rq.onblocked=()=>res(null); setTimeout(()=>res(null),6000);
+}catch(e){ res(null); } }); }
+function idbReq(store,mode,fn){ return new Promise((res,rej)=>{ if(!idb) return rej(new Error("sin almacén")); try{ const t=idb.transaction(store,mode); const r=fn(t.objectStore(store)); t.oncomplete=()=>res(r?r.result:undefined); t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error); }catch(e){ rej(e); } }); }
+const idbGet=(s,k)=>idbReq(s,"readonly",st=>st.get(k));
+const idbPut=(s,k,v)=>idbReq(s,"readwrite",st=>st.put(v,k));
+const idbDel=(s,k)=>idbReq(s,"readwrite",st=>st.delete(k));
+const idbKeys=s=>idbReq(s,"readonly",st=>st.getAllKeys());
+function idbEntries(store){ return new Promise((res,rej)=>{ if(!idb) return res([]); const out=[]; try{ const t=idb.transaction(store,"readonly"); const c=t.objectStore(store).openCursor();
+  c.onsuccess=()=>{ const cur=c.result; if(cur){ out.push([cur.key,cur.value]); cur.continue(); } }; t.oncomplete=()=>res(out); t.onerror=()=>rej(t.error); }catch(e){ rej(e); } }); }
+
+const dirty=new Set(); let idbTimer=null;
+function writeMirror(){
+  try{ const recs={}; for(const [k,v] of R) if(!k.startsWith("t_")) recs[k]=v;
+    localStorage.setItem(MIRROR,JSON.stringify({v:2,recs,pending:[...pending],meta})); mirrorOk=true; }
+  catch(e){ mirrorOk=false; }
+}
+let idbChain=Promise.resolve();
+function writeIdb(){ idbChain=idbChain.then(writeIdbNow,writeIdbNow); return idbChain; }
+async function savedToDisk(){ clearTimeout(idbTimer); idbTimer=null; writeMirror(); await writeIdb(); }
+async function writeIdbNow(){
+  if(!idb) return; const keys=[...dirty]; dirty.clear();
+  try{ await new Promise((res,rej)=>{ const t=idb.transaction("kv","readwrite"); const st=t.objectStore("kv");
+      for(const k of keys){ const v=R.get(k); if(v) st.put(v,k); } st.put([...pending],"__pending"); st.put(meta,"__meta");
+      t.oncomplete=res; t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error); }); idbOk=true; }
+  catch(e){ keys.forEach(k=>dirty.add(k)); idbOk=false; }
+  renderSync();
+}
+function persist(){ writeMirror(); if(!idbTimer) idbTimer=setTimeout(()=>{ idbTimer=null; writeIdb(); },0); renderSync(); }
+function setRec(key,rec,push){
+  const s=sanitize(key,rec); if(!s) return false;
+  R.set(key,s); dirty.add(key); if(push!==false) pending.add(key);
+  persist(); scheduleFlush(); snapshotSoon(); return true;
+}
+/* Copias automáticas en el móvil: una por día, se guardan las últimas 21 */
+let snapTimer=null;
+function snapshotSoon(){ clearTimeout(snapTimer); snapTimer=setTimeout(()=>takeSnapshot(false),45000); }
+async function takeSnapshot(force){
+  if(!idb||!R.size) return; const today=todayStr();
+  if(!force&&meta.lastSnap===today&&Date.now()-meta.lastSnapAt<3*3600000) return;
+  try{ await idbPut("snaps",today,{at:Date.now(),recs:Object.fromEntries(R)}); meta.lastSnap=today; meta.lastSnapAt=Date.now();
+    const keys=(await idbKeys("snaps")).sort(); for(const k of keys.slice(0,Math.max(0,keys.length-21))) await idbDel("snaps",k); persist(); }catch(e){}
+}
+
+/* ================= Registros ================= */
+function getDay(date){ return R.get("d_"+date)||sDay(date,{}); }
+function trackFor(date){ const t=R.get("t_"+date); return t&&!t.del&&t.pts.length>1?t:null; }
+function liveExp(d){ return d.expenses.filter(e=>!e.del); }
+function dayTotal(d){ return r2(liveExp(d).reduce((s,e)=>s+e.eur,0)); }
+function saveDayFields(date,patch){ const d=clone(getDay(date)); Object.assign(d,patch); d.fAt=stamp(d.fAt); d.updatedAt=stamp(d.updatedAt); setRec("d_"+date,d); }
+function upsertExpense(date,exp){ const d=clone(getDay(date)); const i=d.expenses.findIndex(e=>e.id===exp.id); exp.u=stamp(i>=0?d.expenses[i].u:0); if(i>=0) d.expenses[i]=exp; else d.expenses.push(exp); d.updatedAt=stamp(d.updatedAt); setRec("d_"+date,d); }
+function setExpenseDel(date,id,del){ const d=clone(getDay(date)); const e=d.expenses.find(x=>x.id===id); if(!e) return; e.del=del; e.u=stamp(e.u); d.updatedAt=stamp(d.updatedAt); setRec("d_"+date,d); }
+function saveRate(cur,rate){
+  if(!cur||cur==="EUR"||!(rate>0)) return; const prev=(R.get("settings")||sSettings({})); const old=prev.rates[cur];
+  if(old&&Math.abs(old.rate-rate)<1e-9) return; const s=clone(prev); s.rates[cur]={rate:Math.round(rate*10000)/10000,date:todayStr()}; s.updatedAt=stamp(s.updatedAt); setRec("settings",s);
+}
+function rates(){ return (R.get("settings")||sSettings({})).rates; }
+function posts(){ return [...R.values()].filter(v=>v.kind==="post"&&!v.del).sort((a,b)=>(a.date<b.date?1:a.date>b.date?-1:b.createdAt-a.createdAt)); }
+function allDates(){ const s=new Set(); for(const v of R.values()){ if(v.kind==="day"&&(v.km!=null||v.from||v.to||v.notes||liveExp(v).length)) s.add(v.date); else if((v.kind==="track"||v.kind==="post")&&!v.del) s.add(v.date); } return [...s].sort(); }
+function tripStart(){ return allDates()[0]||null; }
+function tripDayNum(date){ const s=tripStart(); if(!s||date<s) return null; return Math.round((parseYmd(date)-parseYmd(s))/86400000)+1; }
+
+/* ================= Fotos ================= */
+async function putPhoto(pid,rec){ if(idb){ try{ await idbPut("photos",pid,rec); return true; }catch(e){} } memPhotos.set(pid,rec); return false; }
+async function getPhoto(pid){ if(memPhotos.has(pid)) return memPhotos.get(pid); if(idb){ try{ return await idbGet("photos",pid); }catch(e){} } return null; }
+const urlCache=new Map();
+async function photoFromDrive(ph){
+  if(!ph.asset||!cfg.url||navigator.onLine===false) return null;
+  try{ const j=await api("getphoto",{id:ph.asset},90000); const bin=atob(j.b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+    const blob=new Blob([arr],{type:"image/jpeg"}); await putPhoto(ph.pid,{blob,w:ph.w||0,h:ph.h||0,asset:ph.asset,at:Date.now()}); return blob; }catch(e){ return null; }
+}
+async function photoSrc(ph){
+  if(urlCache.has(ph.pid)) return urlCache.get(ph.pid);
+  const r=await getPhoto(ph.pid); const b=r&&r.blob?r.blob:await photoFromDrive(ph); if(!b) return null;
+  const u=URL.createObjectURL(b); urlCache.set(ph.pid,u); return u;
+}
+async function photoBlob(ph){ const r=await getPhoto(ph.pid); if(r&&r.blob) return r.blob; return await photoFromDrive(ph); }
+async function processImage(file){
+  const url=URL.createObjectURL(file);
+  try{ const img=await loadImg(url); let w=img.naturalWidth,h=img.naturalHeight; const sc=Math.min(1,2048/Math.max(w,h)); w=Math.round(w*sc); h=Math.round(h*sc);
+    const c=document.createElement("canvas"); c.width=w; c.height=h; c.getContext("2d").drawImage(img,0,0,w,h);
+    const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",0.84)); if(!blob) throw new Error("jpeg"); return {blob,w,h}; }
+  finally{ URL.revokeObjectURL(url); }
+}
+async function photoData(ph,max){
+  const b=await photoBlob(ph); if(!b) return null; const url=URL.createObjectURL(b);
+  try{ const img=await loadImg(url); let w=img.naturalWidth,h=img.naturalHeight; const sc=Math.min(1,max/Math.max(w,h)); w=Math.round(w*sc); h=Math.round(h*sc);
+    const c=document.createElement("canvas"); c.width=w; c.height=h; c.getContext("2d").drawImage(img,0,0,w,h); return {data:c.toDataURL("image/jpeg",0.78),w,h}; }
+  catch(e){ return null; } finally{ URL.revokeObjectURL(url); }
+}
+
+/* ================= Copia en Google Drive (script de Google de su propia cuenta) ================= */
+const CFG_KEY="cuadernoRuta.drive";
+let cfg={url:"",key:""};
+const sync={state:"off",busy:false,again:false,lastError:"",photosLeft:0};
+function genKey(){ const a="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"; const b=new Uint8Array(32); crypto.getRandomValues(b); return [...b].map(x=>a[x%a.length]).join(""); }
+function loadCfg(){
+  try{ const o=JSON.parse(localStorage.getItem(CFG_KEY)||"null"); if(o&&typeof o.key==="string") cfg={url:String(o.url||""),key:o.key}; }catch(e){}
+  if(!cfg.key&&meta.cfg&&meta.cfg.key) cfg={url:String(meta.cfg.url||""),key:meta.cfg.key};
+}
+function saveCfg(){ try{ localStorage.setItem(CFG_KEY,JSON.stringify(cfg)); }catch(e){} meta.cfg={...cfg}; persist(); }
+function validUrl(u){ return /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(u); }
+async function api(action,payload,ms){
+  if(!cfg.url||!cfg.key) throw {code:"noconfig"};
+  let res;
+  try{ res=await withTimeout(fetch(cfg.url,{method:"POST",body:JSON.stringify({key:cfg.key,action,...(payload||{})}),redirect:"follow"}),ms||60000); }
+  catch(e){ throw {code:(e&&e.code)||"network"}; }
+  if(!res.ok) throw {code:"http",message:"Drive respondió con error "+res.status};
+  let j; try{ j=await res.json(); }catch(e){ throw {code:"badresp"}; }
+  if(!j||!j.ok) throw {code:(j&&j.error)||"error",message:j&&j.message};
+  return j;
+}
+function apiErrMsg(e){
+  const c=e&&e.code;
+  if(c==="bad_key") return "La clave no coincide con la del script. Revisa que pegaste en el script la clave que muestra la app.";
+  if(c==="badresp") return "El script no responde como debe. Revisa que esté implementado como aplicación web con acceso «Cualquier usuario».";
+  if(c==="shrink") return e.message||"Drive ha frenado una copia con muchos menos datos que la anterior. No se ha sobrescrito nada.";
+  if(c==="busy") return "Drive estaba ocupado. Se vuelve a intentar sola.";
+  if(c==="network"||c==="timeout") return "Sin conexión con Drive ahora. Se sube sola al volver la cobertura.";
+  if(c==="noconfig") return "Drive no está conectado.";
+  return "Drive devolvió un error"+(e&&e.message?": "+String(e.message).slice(0,160):".");
+}
+function blobToB64(blob){ return new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(String(fr.result).split(",")[1]||""); fr.onerror=()=>rej(fr.error); fr.readAsDataURL(blob); }); }
+function countNonTrack(){ let n=0; for(const k of R.keys()) if(!k.startsWith("t_")) n++; return n; }
+function stateExport(){ const recs={}; for(const [k,v] of R) if(!k.startsWith("t_")) recs[k]=v; return {app:"cuaderno-de-ruta",v:2,exportedAt:new Date().toISOString(),recs}; }
+function fullExport(){ return {app:"cuaderno-de-ruta",v:2,exportedAt:new Date().toISOString(),recs:Object.fromEntries(R)}; }
+function photosPendingCount(){ let n=0; for(const p of posts()) for(const ph of p.photos) if(!ph.asset) n++; return n; }
+async function uploadPhotos(limit){
+  let n=0,left=0;
+  for(const p of posts()){
+    const done={};
+    for(const ph of p.photos){ if(ph.asset) continue; left++; if(n>=limit) continue;
+      const local=await getPhoto(ph.pid); if(!local||!local.blob) continue;
+      if(local.asset){ done[ph.pid]=local.asset; left--; continue; }
+      const j=await api("photo",{name:p.date+"_"+ph.pid+".jpg",b64:await blobToB64(local.blob)},180000);
+      local.asset=j.id; await putPhoto(ph.pid,local); done[ph.pid]=j.id; n++; left--;
+    }
+    if(Object.keys(done).length){ const cur=clone(R.get("p_"+p.id)); cur.photos.forEach(ph=>{ if(!ph.asset&&done[ph.pid]) ph.asset=done[ph.pid]; }); cur.updatedAt=stamp(cur.updatedAt); setRec("p_"+p.id,cur); }
+  }
+  sync.photosLeft=left;
+}
+let syncTimer=null, retryTimer=null;
+function scheduleFlush(ms){ clearTimeout(syncTimer); syncTimer=setTimeout(runSync,ms==null?3000:ms); }
+async function runSync(){
+  if(sync.busy){ sync.again=true; return; }
+  if(!cfg.url){ sync.state="off"; renderSync(); return; }
+  if(navigator.onLine===false){ sync.state="offline"; renderSync(); return; }
+  sync.busy=true; sync.again=false; renderSync();
+  try{
+    for(const key of [...pending].filter(k=>k.startsWith("t_"))){
+      const t=R.get(key); if(!t){ pending.delete(key); continue; }
+      const s=JSON.stringify(t); await api("put",{folder:"rutas",name:"ruta-"+t.date+"-"+t.updatedAt+".json",data:s});
+      if(JSON.stringify(R.get(key))===s) pending.delete(key); persist();
+    }
+    await uploadPhotos(6);
+    const others=[...pending].filter(k=>!k.startsWith("t_"));
+    if(others.length||!meta.lastStateAt){
+      const snap={}; for(const k of others) snap[k]=JSON.stringify(R.get(k));
+      await api("state",{day:todayStr(),data:JSON.stringify(stateExport()),count:countNonTrack()},180000);
+      for(const k of others) if(JSON.stringify(R.get(k))===snap[k]) pending.delete(k);
+      meta.lastStateAt=Date.now();
+    }
+    meta.lastSyncAt=Date.now(); sync.lastError=""; sync.state=(pending.size||sync.photosLeft)?"pending":"ok"; persist();
+  }catch(e){
+    const c=e&&e.code;
+    if(c==="network"||c==="timeout"||c==="busy"){ sync.state="offline"; sync.lastError=""; }
+    else { sync.state="error"; sync.lastError=apiErrMsg(e); }
+  }
+  sync.busy=false; renderSync(); if(ui.tab==="datos") safeRender();
+  clearTimeout(retryTimer);
+  if(sync.again) retryTimer=setTimeout(runSync,500);
+  else if(sync.state==="pending") retryTimer=setTimeout(runSync,4000);
+  else if(sync.state==="offline") retryTimer=setTimeout(runSync,60000);
+}
+async function restoreFromDrive(){
+  let n=0;
+  try{ const j=await api("get",{which:"ultimo"},180000); n+=mergeImport(JSON.parse(j.data)); }
+  catch(e){ if(!(e&&e.code==="not_found")) throw e; }
+  const l=await api("list",{folder:"rutas"},120000); const best={};
+  for(const f of l.files||[]){ const m=/^ruta-(\d{4}-\d{2}-\d{2})-(\d+)\.json$/.exec(f.name); if(m&&(!best[m[1]]||+m[2]>best[m[1]].u)) best[m[1]]={u:+m[2],name:f.name}; }
+  for(const [d,b] of Object.entries(best)){ const ex=R.get("t_"+d); if(ex&&ex.updatedAt>=b.u) continue;
+    const g=await api("get",{folder:"rutas",name:b.name},60000); n+=mergeImport({recs:{["t_"+d]:JSON.parse(g.data)}}); }
+  return n;
+}
+window.addEventListener("online",()=>{ renderSync(); scheduleFlush(500); });
+window.addEventListener("offline",()=>{ sync.state="offline"; renderSync(); });
+document.addEventListener("visibilitychange",()=>{ if(document.hidden){ writeMirror(); writeIdb(); } else scheduleFlush(800); });
+window.addEventListener("pagehide",()=>{ writeMirror(); writeIdb(); });
+setInterval(()=>{ if(!document.hidden&&cfg.url) runSync(); },5*60000);
+
+/* ================= Estado de guardado ================= */
+function renderSync(){
+  const dot=document.getElementById("syncDot"), txt=document.getElementById("syncTxt"); if(!dot) return;
+  const n=pending.size+(cfg.url?sync.photosLeft:0); let cls="",t="";
+  if(!booted){ cls="busy"; t="Abriendo…"; }
+  else if(!idbOk&&!mirrorOk){ cls="bad"; t="¡No se puede guardar en el móvil!"; }
+  else if(!cfg.url){ cls="warn"; t="Solo en el móvil"; }
+  else if(sync.state==="error"){ cls="bad"; t="Revisar Drive"; }
+  else if(sync.busy){ cls="busy"; t="Guardando en Drive…"; }
+  else if(navigator.onLine===false||sync.state==="offline"){ cls="warn"; t=n?"Sin conexión · "+n+" por subir":"Sin conexión · guardado"; }
+  else if(n){ cls="warn"; t=n+" por subir"; }
+  else { cls="ok"; t="Todo en Drive"; }
+  dot.className="dot "+cls; txt.textContent=t;
+  const dd=document.getElementById("syncDetail"); if(dd) dd.innerHTML=syncDetailHtml();
+}
+
+/* ================= Cálculos de periodos ================= */
+function period(type,anchor){
+  const a=parseYmd(anchor);
+  if(type==="dia") return {start:anchor,end:anchor,label:longDate(anchor)};
+  if(type==="semana"){ const wd=(a.getDay()+6)%7; const st=addDays(anchor,-wd), en=addDays(st,6);
+    return {start:st,end:en,label:parseYmd(st).toLocaleDateString("es-ES",{day:"numeric",month:"short"})+" – "+shortDateY(en)}; }
+  if(type==="mes") return {start:ymd(new Date(a.getFullYear(),a.getMonth(),1)),end:ymd(new Date(a.getFullYear(),a.getMonth()+1,0)),label:a.toLocaleDateString("es-ES",{month:"long",year:"numeric"})};
+  if(type==="anio") return {start:a.getFullYear()+"-01-01",end:a.getFullYear()+"-12-31",label:String(a.getFullYear())};
+  const ds=allDates(); return {start:ds[0]||anchor,end:ds[ds.length-1]||anchor,label:"Todo el viaje"};
+}
+function shiftAnchor(type,anchor,dir){ const a=parseYmd(anchor);
+  if(type==="dia") return addDays(anchor,dir); if(type==="semana") return addDays(anchor,7*dir);
+  if(type==="mes") return ymd(new Date(a.getFullYear(),a.getMonth()+dir,1)); if(type==="anio") return ymd(new Date(a.getFullYear()+dir,0,1)); return anchor; }
+function tracksIn(start,end){ return [...R.values()].filter(v=>v.kind==="track"&&!v.del&&v.pts.length>1&&v.date>=start&&v.date<=end).sort((a,b)=>a.date<b.date?-1:1); }
+function summarize(start,end){
+  const days=[...R.values()].filter(v=>v.kind==="day"&&v.date>=start&&v.date<=end).sort((a,b)=>a.date<b.date?-1:1);
+  const out={days,km:0,eur:0,ridden:0,byCat:{},byCur:{},byGroup:{},moving:0,trackKm:0};
+  for(const d of days){ if(d.km){ out.km+=d.km; out.ridden++; }
+    for(const e of liveExp(d)){ out.eur+=e.eur; out.byCat[e.cat]=(out.byCat[e.cat]||0)+e.eur; const g=(CAT[e.cat]||CAT.otros).g; out.byGroup[g]=(out.byGroup[g]||0)+e.eur;
+      const c=out.byCur[e.cur]||(out.byCur[e.cur]={amount:0,eur:0}); c.amount+=e.amount; c.eur+=e.eur; } }
+  for(const t of tracksIn(start,end)){ if(t.stats.moving){ out.moving+=t.stats.moving; out.trackKm+=t.stats.km; } }
+  out.active=days.filter(d=>d.km||liveExp(d).length).length;
+  return out;
+}
+
+/* ================= Geografía y estadísticas tipo Strava ================= */
+function hav(a,b){ const R6=6371,toR=x=>x*Math.PI/180; const dLat=toR(b.lat-a.lat),dLon=toR(b.lon-a.lon);
+  const h=Math.sin(dLat/2)**2+Math.cos(toR(a.lat))*Math.cos(toR(b.lat))*Math.sin(dLon/2)**2; return 2*R6*Math.asin(Math.min(1,Math.sqrt(h))); }
+function computeStats(pts){
+  let km=0,moving=0,gain=null,lastEle=null; const cum=[0]; let maxV=null,approx=false; const segV=[];
+  for(let i=1;i<pts.length;i++){ const a=pts[i-1],b=pts[i]; const dt=(b.t-a.t)/1000; const d=hav(a,b); let ok=dt>0;
+    const v=ok?d/(dt/3600):0; if(!ok||v>250||d>1500) ok=false;
+    if(ok){ km+=d; if(v>=3&&v<=200&&dt<=3*3600) moving+=dt; segV.push({v,dt}); }
+    cum.push(cum[i-1]+(ok?d:0)); }
+  for(const p of pts){ if(p.ele==null) continue; if(lastEle==null){ lastEle=p.ele; gain=gain||0; continue; } const df=p.ele-lastEle; if(df>5){ gain+=df; lastEle=p.ele; } else if(df<-5) lastEle=p.ele; }
+  let s=0; for(let e=1;e<pts.length;e++){ while(s<e&&(pts[e].t-pts[s].t)/1000>60) s++; const dt=(pts[e].t-pts[s].t)/1000; if(dt>=10){ const v=(cum[e]-cum[s])/(dt/3600); if(v<=250&&(maxV==null||v>maxV)) maxV=v; } }
+  if(maxV==null&&segV.length) approx=true;
+  const elapsed=pts.length>1?(pts[pts.length-1].t-pts[0].t)/1000:0;
+  return {km:r1(km),moving:Math.round(moving),elapsed:Math.round(elapsed),avg:moving>0?r1(km/(moving/3600)):null,max:maxV==null?null:Math.round(maxV),gain:gain==null?null:Math.round(gain),approx};
+}
+function simplify(pts,maxN){
+  if(pts.length<=maxN) return pts;
+  const lat0=pts[0].lat*Math.PI/180; const xy=pts.map(p=>[p.lon*111320*Math.cos(lat0),p.lat*110540]);
+  const run=tol=>{ const n=xy.length,keep=new Uint8Array(n); keep[0]=keep[n-1]=1; const st=[[0,n-1]];
+    while(st.length){ const [a,b]=st.pop(); let md=0,mi=-1; const [ax,ay]=xy[a],[bx,by]=xy[b]; const dx=bx-ax,dy=by-ay,L=dx*dx+dy*dy;
+      for(let i=a+1;i<b;i++){ const [px,py]=xy[i]; let t=L?((px-ax)*dx+(py-ay)*dy)/L:0; t=Math.max(0,Math.min(1,t)); const ex=ax+t*dx-px,ey=ay+t*dy-py; const d=ex*ex+ey*ey; if(d>md){md=d;mi=i;} }
+      if(mi>0&&md>tol*tol){ keep[mi]=1; st.push([a,mi],[mi,b]); } }
+    const out=[]; for(let i=0;i<n;i++) if(keep[i]) out.push(pts[i]); return out; };
+  let tol=4,res=run(tol); while(res.length>maxN){ tol*=1.6; res=run(tol); } return res;
+}
+function makeTrackRec(date,pts,src){
+  const stats=computeStats(pts); const simp=simplify(pts,450); const t0=pts[0].t;
+  return {kind:"track",date,t0,pts:simp.map(p=>[Math.round(p.lat*1e5)/1e5,Math.round(p.lon*1e5)/1e5,Math.round((p.t-t0)/1000),p.ele==null?null:Math.round(p.ele)]),stats,src,del:false,updatedAt:stamp((R.get("t_"+date)||{}).updatedAt)};
+}
+function trackPts(t){ return t.pts.map(p=>({lat:p[0],lon:p[1],t:t.t0+p[2]*1000,ele:p[3]})); }
+function normTime(t){ if(t==null||t==="") return null; if(typeof t==="number") return t<1e12?t*1000:t; const n=Number(t); if(Number.isFinite(n)) return n<1e12?n*1000:n; const p=Date.parse(t); return Number.isFinite(p)?p:null; }
+function collectJson(o,out,depth){
+  if(depth>40||o==null||typeof o!=="object") return;
+  if(Array.isArray(o)){ for(const x of o) collectJson(x,out,depth+1); return; }
+  if(o.location&&typeof o.location==="object"&&typeof o.location.lat==="number"&&o.start_time!=null){
+    const L=o.location,t=normTime(o.start_time); const lon=L.lon??L.lng;
+    if(t&&typeof lon==="number") out.push({lat:L.lat,lon,t,ele:null,name:L.locality||L.name||o.display_name||o.name||"",country:L.country||L.detail||L.country_code||""});
+  }else{ const lat=o.lat??o.latitude,lon=o.lon??o.lng??o.longitude;
+    if(typeof lat==="number"&&typeof lon==="number"){ const t=normTime(o.time??o.timestamp??o.start_time??o.creation_time); const ele=num(o.ele??o.elevation??o.altitude);
+      if(t) out.push({lat,lon,t,ele,name:o.locality||o.name||"",country:o.country||""}); } }
+  for(const [k,v] of Object.entries(o)) if(k!=="location"&&v&&typeof v==="object") collectJson(v,out,depth+1);
+}
+function collectGpx(text,out){
+  const doc=new DOMParser().parseFromString(text,"application/xml");
+  doc.querySelectorAll("trkpt,rtept,wpt").forEach(p=>{ const lat=parseFloat(p.getAttribute("lat")),lon=parseFloat(p.getAttribute("lon"));
+    const te=p.querySelector("time"),ne=p.querySelector("name"),ee=p.querySelector("ele"); const t=te?normTime(te.textContent.trim()):null;
+    if(Number.isFinite(lat)&&Number.isFinite(lon)&&t) out.push({lat,lon,t,ele:ee?num(ee.textContent.trim()):null,name:ne?ne.textContent.trim():"",country:""}); });
+}
+function cleanPts(points){
+  const byKey=new Map();
+  for(const p of points){ if(!(Number.isFinite(p.lat)&&Number.isFinite(p.lon)&&Math.abs(p.lat)<=90&&Math.abs(p.lon)<=180&&!(p.lat===0&&p.lon===0))) continue;
+    const k=p.t+":"+p.lat.toFixed(5)+":"+p.lon.toFixed(5); const prev=byKey.get(k);
+    if(!prev) byKey.set(k,p); else if(!prev.name&&p.name) byKey.set(k,{...prev,name:p.name,country:p.country}); }
+  return [...byKey.values()].sort((a,b)=>a.t-b.t);
+}
+function buildDays(points){
+  const pts=cleanPts(points); const byDay=new Map();
+  for(const p of pts){ const d=ymd(new Date(p.t)); if(!byDay.has(d)) byDay.set(d,[]); byDay.get(d).push(p); }
+  const out=[]; let prevName="";
+  for(const date of [...byDay.keys()].sort()){
+    const arr=byDay.get(date); const named=arr.filter(p=>p.name); const stats=arr.length>1?computeStats(arr):{km:0};
+    const from=prevName||(named[0]&&named[0].name)||""; const to=named.length?named[named.length-1].name:"";
+    const country=named.length?String(named[named.length-1].country||""):"";
+    if(stats.km>=0.5||to) out.push({date,pts:arr,km:Math.round(stats.km),from:from===to?"":from,to,country,stats});
+    if(named.length) prevName=named[named.length-1].name;
+  }
+  return out;
+}
+async function parseRouteFile(file){
+  const pts=[]; const name=file.name.toLowerCase();
+  if(name.endsWith(".zip")){
+    if(typeof JSZip==="undefined") throw new Error("No se pudo cargar el lector de .zip (hace falta conexión). Descomprime el .zip y sube el locations.json.");
+    const zip=await JSZip.loadAsync(file);
+    for(const f of Object.values(zip.files).filter(f=>!f.dir&&/\.(json|gpx)$/i.test(f.name))){ const txt=await f.async("string");
+      if(/\.gpx$/i.test(f.name)) collectGpx(txt,pts); else { try{ collectJson(JSON.parse(txt),pts,0); }catch(e){} } }
+  }else{ const txt=await file.text(); if(name.endsWith(".gpx")||txt.trim().startsWith("<")) collectGpx(txt,pts); else collectJson(JSON.parse(txt),pts,0); }
+  return pts;
+}
+
+/* ================= Dibujo del mapa y perfil ================= */
+function cssPal(){ const cs=getComputedStyle(document.documentElement); const g=n=>cs.getPropertyValue(n).trim();
+  return {bg:g("--map-bg"),grid:g("--map-grid"),line:g("--accent"),casing:g("--casing"),start:g("--ok"),end:g("--ink"),text:g("--muted")}; }
+function nice(x){ if(!(x>0)) return 1; const e=10**Math.floor(Math.log10(x)); const f=x/e; return (f<1.5?1:f<3.5?2:f<7.5?5:10)*e; }
+function drawMap(cv,tracks,opt){
+  opt=opt||{}; const pal=opt.pal||cssPal(); const dpr=opt.dpr||Math.min(2,window.devicePixelRatio||1);
+  const W=opt.w||Math.max(220,cv.clientWidth||(cv.parentElement&&cv.parentElement.clientWidth)||600);
+  const H=opt.h||Math.round(Math.max(190,Math.min(400,W*0.62)));
+  cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); if(!opt.w) cv.style.height=H+"px";
+  const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); g.fillStyle=pal.bg; g.fillRect(0,0,W,H);
+  const lines=tracks.map(trackPts).filter(a=>a.length>1);
+  if(!lines.length){ g.fillStyle=pal.text; g.font="14px sans-serif"; g.textAlign="center"; g.fillText("Sin rutas en este periodo",W/2,H/2); return; }
+  let minLa=90,maxLa=-90,minLo=180,maxLo=-180;
+  for(const l of lines) for(const p of l){ if(p.lat<minLa)minLa=p.lat; if(p.lat>maxLa)maxLa=p.lat; if(p.lon<minLo)minLo=p.lon; if(p.lon>maxLo)maxLo=p.lon; }
+  const kx=Math.cos(((minLa+maxLa)/2)*Math.PI/180); const mn=0.004;
+  if((maxLo-minLo)*kx<mn){ const c=(minLo+maxLo)/2; minLo=c-mn/kx/2; maxLo=c+mn/kx/2; }
+  if(maxLa-minLa<mn){ const c=(minLa+maxLa)/2; minLa=c-mn/2; maxLa=c+mn/2; }
+  const sx=(maxLo-minLo)*kx, sy=maxLa-minLa; const pad=opt.pad||24; const sc=Math.min((W-2*pad)/sx,(H-2*pad)/sy);
+  const ox=(W-sx*sc)/2, oy=(H-sy*sc)/2; const P=p=>[ox+(p.lon-minLo)*kx*sc, oy+(maxLa-p.lat)*sc];
+  const kmPx=111.32/sc; const step=nice(kmPx*W/5)/kmPx;
+  g.strokeStyle=pal.grid; g.lineWidth=1; g.beginPath();
+  for(let x=ox%step;x<W;x+=step){ g.moveTo(Math.round(x)+.5,0); g.lineTo(Math.round(x)+.5,H); }
+  for(let y=oy%step;y<H;y+=step){ g.moveTo(0,Math.round(y)+.5); g.lineTo(W,Math.round(y)+.5); } g.stroke();
+  g.lineJoin="round"; g.lineCap="round"; const th=opt.thick?Math.max(1.5,W/420):1;
+  const path=l=>{ g.beginPath(); l.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); }); };
+  for(const l of lines){ path(l); g.strokeStyle=pal.casing; g.lineWidth=6.5*th; g.stroke(); }
+  for(const l of lines){ path(l); g.strokeStyle=pal.line; g.lineWidth=3.5*th; g.stroke(); }
+  const dot=(pt,r,fill)=>{ g.beginPath(); g.arc(pt[0],pt[1],r,0,Math.PI*2); g.fillStyle=fill; g.fill(); g.lineWidth=2.5*th; g.strokeStyle=pal.casing; g.stroke(); };
+  if(lines.length>1) for(const l of lines.slice(1)) dot(P(l[0]),3*th,pal.line);
+  dot(P(lines[0][0]),6*th,pal.start); const last=lines[lines.length-1]; dot(P(last[last.length-1]),6*th,pal.end);
+  const barKm=nice(kmPx*W*0.2); const bl=barKm/kmPx; const bx=12*th, by=H-14*th;
+  g.strokeStyle=pal.end; g.lineWidth=2*th; g.beginPath(); g.moveTo(bx,by-5*th); g.lineTo(bx,by); g.lineTo(bx+bl,by); g.lineTo(bx+bl,by-5*th); g.stroke();
+  g.fillStyle=pal.end; g.font=(500)+" "+Math.round(11*th)+"px 'IBM Plex Mono', monospace"; g.textAlign="left";
+  g.fillText(barKm<1?Math.round(barKm*1000)+" m":fKm.format(barKm)+" km",bx+bl+6*th,by+3*th);
+}
+function drawProfile(cv,t){
+  const pts=trackPts(t); const hasEle=pts.filter(p=>p.ele!=null).length>2; const ser=[];
+  if(hasEle){ let d=0; for(let i=0;i<pts.length;i++){ if(i) d+=hav(pts[i-1],pts[i]); if(pts[i].ele!=null) ser.push([d,pts[i].ele]); } }
+  else{ let tt=0; for(let i=1;i<pts.length;i++){ const dt=(pts[i].t-pts[i-1].t)/1000; if(dt<=0) continue; const v=hav(pts[i-1],pts[i])/(dt/3600); if(v>200) continue; tt+=dt; ser.push([tt,v]); }
+    for(let i=0;i<ser.length;i++){ const w=ser.slice(Math.max(0,i-2),i+3); ser[i]=[ser[i][0],w.reduce((a,b)=>a+b[1],0)/w.length]; } }
+  if(ser.length<3||(!hasEle&&t.stats.approx)){ cv.hidden=true; return; }
+  const pal=cssPal(); const dpr=Math.min(2,window.devicePixelRatio||1); const W=Math.max(200,cv.clientWidth||300),H=72;
+  cv.width=W*dpr; cv.height=H*dpr; cv.style.height=H+"px"; const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,W,H);
+  const x0=ser[0][0],x1=ser[ser.length-1][0]||1; let y0=Math.min(...ser.map(s=>s[1])),y1=Math.max(...ser.map(s=>s[1])); if(y1-y0<1){ y1+=1; y0-=1; }
+  const top=18,bot=H-2; const X=x=>(x-x0)/(x1-x0||1)*W, Y=y=>bot-(y-y0)/(y1-y0)*(bot-top);
+  g.beginPath(); g.moveTo(0,bot); ser.forEach(s=>g.lineTo(X(s[0]),Y(s[1]))); g.lineTo(W,bot); g.closePath();
+  g.globalAlpha=.16; g.fillStyle=pal.line; g.fill(); g.globalAlpha=1;
+  g.beginPath(); ser.forEach((s,i)=>i?g.lineTo(X(s[0]),Y(s[1])):g.moveTo(X(s[0]),Y(s[1]))); g.strokeStyle=pal.line; g.lineWidth=1.6; g.stroke();
+  g.fillStyle=pal.text; g.font="500 11px 'IBM Plex Mono', monospace"; g.textAlign="left";
+  g.fillText(hasEle?"Altitud · "+fKm.format(y0)+"–"+fKm.format(y1)+" m":"Velocidad · hasta "+fKm.format(y1)+" km/h",0,11);
+}
+function mapImage(tracks,w,h,pal){ const cv=document.createElement("canvas"); drawMap(cv,tracks,{w,h,dpr:1,pal,thick:true,pad:Math.round(w*0.05)}); return cv.toDataURL("image/jpeg",0.9); }
+function paintCanvases(){
+  document.querySelectorAll("canvas[data-map]").forEach(cv=>{ const t=trackFor(cv.dataset.map); if(t) drawMap(cv,[t]); });
+  document.querySelectorAll("canvas[data-maprange]").forEach(cv=>{ const [a,b]=cv.dataset.maprange.split("|"); drawMap(cv,tracksIn(a,b)); });
+  document.querySelectorAll("canvas[data-prof]").forEach(cv=>{ const t=trackFor(cv.dataset.prof); if(t) drawProfile(cv,t); });
+  document.querySelectorAll(".mapwrap[data-mk]").forEach(w=>{ if(w.dataset.mounted) return; const [a,b]=w.dataset.mk.split("|"); const tr=a===b?[trackFor(a)].filter(Boolean):tracksIn(a,b); if(tr.length&&mountLeaflet(w,tr,false)) w.dataset.mounted="1"; });
+}
+/* Mapa real (OpenStreetMap) cuando hay conexión; si no carga, se queda la línea dibujada. */
+function leafletOK(){ return typeof L!=="undefined"&&L.map&&navigator.onLine!==false; }
+function mountLeaflet(wrap,tracks,interactive){
+  if(!leafletOK()) return false;
+  const lines=tracks.map(trackPts).filter(a=>a.length>1).map(l=>l.map(p=>[p.lat,p.lon])); if(!lines.length) return false;
+  const cv=wrap.querySelector("canvas"); const div=document.createElement("div"); div.className="leaf";
+  if(!interactive) div.style.height=(cv&&cv.style.height)||"260px";
+  wrap.insertBefore(div,wrap.firstChild);
+  let m;
+  try{
+    m=L.map(div,{zoomControl:interactive,attributionControl:true,dragging:interactive,touchZoom:interactive,doubleClickZoom:interactive,scrollWheelZoom:interactive,boxZoom:false,keyboard:interactive,tap:false});
+    const layer=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:18,attribution:'© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'}).addTo(m);
+    let ok=0,bad=0,gone=false; const fallback=()=>{ if(gone||ok>0) return; gone=true; try{ m.remove(); }catch(e){} div.remove(); if(cv) cv.hidden=false; wrap.dataset.mounted="off"; };
+    layer.on("tileload",()=>ok++); layer.on("tileerror",()=>{ bad++; if(bad>=2) fallback(); }); setTimeout(fallback,8000);
+    const pal=cssPal();
+    for(const ll of lines){ L.polyline(ll,{color:"#FFFFFF",weight:7,opacity:.9,interactive:false}).addTo(m); L.polyline(ll,{color:pal.line||"#C2410C",weight:4,interactive:false}).addTo(m); }
+    for(const ll of lines.slice(1)) L.circleMarker(ll[0],{radius:4,color:"#FFFFFF",weight:2,fillColor:pal.line||"#C2410C",fillOpacity:1,interactive:false}).addTo(m);
+    const last=lines[lines.length-1];
+    L.circleMarker(lines[0][0],{radius:7,color:"#FFFFFF",weight:3,fillColor:pal.start||"#2E7A4C",fillOpacity:1,interactive:false}).addTo(m);
+    L.circleMarker(last[last.length-1],{radius:7,color:"#FFFFFF",weight:3,fillColor:"#171A1E",fillOpacity:1,interactive:false}).addTo(m);
+    m.fitBounds(L.latLngBounds(lines.flat()),{padding:[26,26],maxZoom:14});
+    if(cv) cv.hidden=true;
+    return m;
+  }catch(e){ try{ m&&m.remove(); }catch(_){} div.remove(); if(cv) cv.hidden=false; return false; }
+}
+function openBigMap(a,b){
+  const tr=a===b?[trackFor(a)].filter(Boolean):tracksIn(a,b); if(!tr.length) return;
+  const ov=document.createElement("div"); ov.className="bigmap"; ov.setAttribute("role","dialog"); ov.setAttribute("aria-label","Mapa ampliado");
+  ov.innerHTML='<header><b>'+esc(a===b?cap(longDate(a)):shortDateY(a)+" – "+shortDateY(b))+'</b><button class="btn small" type="button">Cerrar</button></header><div class="mapwrap" style="flex:1;display:flex;flex-direction:column"><canvas class="map"></canvas></div>';
+  document.body.appendChild(ov); document.body.style.overflow="hidden";
+  const close=()=>{ try{ if(mm) mm.remove(); }catch(e){} ov.remove(); document.body.style.overflow=""; };
+  ov.querySelector("header button").onclick=close;
+  const w=ov.querySelector(".mapwrap"), cv=w.querySelector("canvas");
+  const mm=mountLeaflet(w,tr,true);
+  if(mm){ const lf=w.querySelector(".leaf"); lf.style.flex="1"; setTimeout(()=>{ mm.invalidateSize(); mm.fitBounds(L.latLngBounds(tr.map(trackPts).flat().map(p=>[p.lat,p.lon])),{padding:[30,30],maxZoom:15}); },60); }
+  else { cv.style.height="100%"; drawMap(cv,tr,{w:w.clientWidth,h:w.clientHeight}); cv.style.width="100%"; }
+}
+document.addEventListener("click",e=>{ const bm=e.target.closest("[data-bigmap]"); if(bm){ const [a,b]=bm.dataset.bigmap.split("|"); openBigMap(a,b); } });
+let rsT; window.addEventListener("resize",()=>{ clearTimeout(rsT); rsT=setTimeout(paintCanvases,200); });
+async function fillImages(){
+  for(const img of document.querySelectorAll("img[data-pid]:not([src])")){
+    const ph={pid:img.dataset.pid,asset:img.dataset.asset||null}; const u=await photoSrc(ph);
+    if(u) img.src=u; else { img.alt="Foto aún no disponible en este dispositivo"; img.src="data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="5"/>'); }
+  }
+}
+
+/* ================= Render general ================= */
+function safeRender(){
+  const ae=document.activeElement;
+  if(ae&&ae.closest&&ae.closest("#main")&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)&&ae.type!=="file"&&ae.type!=="checkbox"){ ui.needsRender=true; return; }
+  render();
+}
+document.addEventListener("focusout",()=>{ if(ui.needsRender) setTimeout(()=>{ const ae=document.activeElement; if(!(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))){ ui.needsRender=false; render(); } },60); });
+function render(){
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.tab===ui.tab)));
+  const s=tripStart(); document.getElementById("tripline").textContent=s?"En ruta desde el "+shortDateY(s):"Bitácora de viaje en moto";
+  const m=document.getElementById("main");
+  if(!booted){ m.innerHTML='<div class="empty">Abriendo el cuaderno…</div>'; return; }
+  m.innerHTML= ui.tab==="dia"?viewDay(): ui.tab==="diario"?viewDiary(): ui.tab==="resumen"?viewSummary(): viewData();
+  if(ui.tab==="dia") bindDay(); else if(ui.tab==="diario") bindDiary(); else if(ui.tab==="datos") bindData();
+  paintCanvases(); fillImages(); renderSync();
+}
+function odo(n,len){ const s=String(Math.max(0,Math.round(n||0))).padStart(len,"0"); return '<span class="odo" aria-label="'+fKm.format(n||0)+' km">'+[...s].map((c,i)=>'<span class="'+(i===s.length-1?"lit":"")+'">'+c+'</span>').join("")+'</span>'; }
+function rstat(l,v){ return '<div class="rstat"><b>'+l+'</b><span>'+v+'</span></div>'; }
+function routeBlock(date){
+  const t=trackFor(date); if(!t) return ""; const s=t.stats;
+  return '<div class="route"><div class="mapwrap" data-mk="'+date+'|'+date+'"><canvas class="map" data-map="'+date+'" role="img" aria-label="Mapa de la ruta del '+esc(shortDate(date))+'"></canvas><button class="mapbtn" type="button" data-bigmap="'+date+'|'+date+'">Ampliar</button></div>'+
+    '<div class="rstats">'+rstat("Distancia",fNum1.format(s.km)+" km")+(s.moving?rstat("En movimiento",dur(s.moving)):"")+(s.elapsed?rstat("Tiempo total",dur(s.elapsed)):"")+
+    (s.avg?rstat("Media",fNum1.format(s.avg)+" km/h"):"")+(s.max&&!s.approx?rstat("Máxima",fKm.format(s.max)+" km/h"):"")+(s.gain!=null?rstat("Desnivel +",fKm.format(s.gain)+" m"):"")+'</div>'+
+    '<canvas class="prof" data-prof="'+date+'" role="img" aria-label="Perfil de la ruta"></canvas></div>';
+}
+function statsLine(s){ const a=["Distancia "+fNum1.format(s.km)+" km"]; if(s.moving) a.push("En movimiento "+dur(s.moving)); if(s.elapsed) a.push("Total "+dur(s.elapsed));
+  if(s.avg) a.push("Media "+fNum1.format(s.avg)+" km/h"); if(s.max&&!s.approx) a.push("Máxima "+fKm.format(s.max)+" km/h"); if(s.gain!=null) a.push("Desnivel + "+fKm.format(s.gain)+" m"); return a.join(" · "); }
+
+/* ================= Vista: Día ================= */
+function lastCur(){ const d=getDay(ui.date); const le=liveExp(d); if(le.length) return le[le.length-1].cur;
+  const ks=[...R.keys()].filter(k=>k.startsWith("d_")&&k.slice(2)<ui.date).sort().reverse();
+  for(const k of ks){ const e=liveExp(R.get(k)); if(e.length) return e[e.length-1].cur; } return "EUR"; }
+function viewDay(){
+  const d=getDay(ui.date), tn=tripDayNum(ui.date), t=trackFor(ui.date);
+  const allKm=[...R.values()].filter(x=>x.kind==="day"&&x.date<=ui.date).reduce((s,x)=>s+(x.km||0),0);
+  const live=liveExp(d); const editing=ui.editId?live.find(e=>e.id===ui.editId):null;
+  const cur=editing?editing.cur:lastCur(); const known=rates()[cur]; const rate=editing?(editing.rate||""):(known?known.rate:"");
+  const selCat=editing?editing.cat:ui.cat;
+  const chips=Object.entries(GROUPS).map(([g,gn])=>'<div class="chip-group"><b>'+gn+'</b><div class="chips">'+CATS.filter(c=>c.g===g).map(c=>'<button type="button" class="chip" data-cat="'+c.k+'" aria-pressed="'+(selCat===c.k)+'">'+c.n+'</button>').join("")+'</div></div>').join("");
+  const list=live.length?live.slice().sort((a,b)=>CATS.findIndex(c=>c.k===a.cat)-CATS.findIndex(c=>c.k===b.cat)||a.at-b.at).map(e=>
+    '<button type="button" class="exp'+(e.id===ui.editId?" editing":"")+'" data-edit="'+esc(e.id)+'"><span class="tag">'+esc(CAT[e.cat].n)+'</span><span class="desc">'+esc(e.desc)+'</span><span class="amt">'+(e.cur==="EUR"?eur(e.amount):esc(money(e.amount,e.cur))+'<small>≈ '+eur(e.eur)+'</small>')+'</span></button>').join("")
+    :'<div class="empty">Aún no hay gastos este día. Elige una categoría abajo y apunta el primero.</div>';
+  const dayPosts=posts().filter(p=>p.date===ui.date).length;
+  const kmHint=t&&d.km!=null&&Math.abs(t.stats.km-d.km)>=1?'<p class="hint">La ruta marca '+fNum1.format(t.stats.km)+' km. <button class="btn small ghost" type="button" id="useTrackKm">Usar esos km</button></p>':"";
+  return `
+  <section class="card" aria-label="Fecha">
+    <div class="datebar">
+      <button class="btn" type="button" id="prevDay" aria-label="Día anterior">‹</button>
+      <input type="date" id="dateIn" value="${ui.date}" aria-label="Fecha">
+      <button class="btn" type="button" id="nextDay" aria-label="Día siguiente">›</button>
+      <button class="btn ghost" type="button" id="todayBtn">Hoy</button>
+    </div>
+    <div class="dayhead"><div class="daylabel">${esc(longDate(ui.date))}</div><div class="tripday">${tn?"Día "+tn+" de viaje":""}</div></div>
+  </section>
+
+  <section class="card" aria-label="Etapa">
+    <h2>Etapa</h2>
+    <div class="row">
+      <label class="grow" for="fFrom">Desde<input id="fFrom" value="${esc(d.from)}" placeholder="Población de salida" autocomplete="off"></label>
+      <label class="grow" for="fTo">Hasta<input id="fTo" value="${esc(d.to)}" placeholder="Población de llegada" autocomplete="off"></label>
+    </div>
+    <div class="row">
+      <label style="flex:0 1 130px" for="fKm">Km del día<input id="fKm" inputmode="decimal" value="${d.km==null?"":esc(d.km)}" placeholder="0"></label>
+      <label class="grow" for="fCountry">País<input id="fCountry" value="${esc(d.country)}" placeholder="Ej. Georgia" autocomplete="off"></label>
+    </div>
+    ${kmHint}
+    <div class="odo-wrap">Cuentakilómetros del viaje ${odo(allKm,6)} km</div>
+    <label for="fNotes">Notas<textarea id="fNotes" placeholder="Carreteras, clima, incidencias…">${esc(d.notes)}</textarea></label>
+    <p class="hint">Se guarda solo mientras escribes, también sin internet.</p>
+  </section>
+
+  <section class="card" aria-label="Ruta del día">
+    <div class="cardhead"><h2>Ruta</h2>${t?'<span class="muted mono" style="font-size:.8rem">'+esc(t.src==="polarsteps"?"Polarsteps":"GPX")+'</span>':""}</div>
+    ${t?routeBlock(ui.date):'<div class="empty">Sin ruta este día. Sube el .gpx del día o importa Polarsteps entero desde Datos.</div>'}
+    ${ui.dayRouteErr?'<p class="err">'+esc(ui.dayRouteErr)+'</p>':""}${ui.dayRouteMsg?'<p class="okmsg">'+esc(ui.dayRouteMsg)+'</p>':""}
+    <div class="row">
+      <label class="btn" for="dayGpx" style="text-transform:none;letter-spacing:0;font-size:1rem;color:var(--ink)">${t?"Cambiar ruta":"Añadir ruta del día"}<input type="file" id="dayGpx" class="vh" accept=".gpx,.json,.zip,application/gpx+xml,application/json,application/zip"></label>
+      ${t?(ui.confirmTrack?'<span class="confirmbox">¿Quitar la ruta? Irá a la papelera. <button class="btn danger small" type="button" id="trkDelYes">Quitar</button><button class="btn ghost small" type="button" id="trkDelNo">No</button></span>':'<button class="btn ghost" type="button" id="trkDel">Quitar ruta</button>'):""}
+    </div>
+  </section>
+
+  <section class="card" aria-label="Gastos del día">
+    <h2>Gastos del día</h2>
+    <div class="exp-list">${list}</div>
+    ${live.length?'<div class="total"><span>Total del día</span><span class="mono">'+eur(dayTotal(d))+'</span></div>':""}
+  </section>
+
+  <section class="card" aria-label="${editing?"Editar gasto":"Nuevo gasto"}" id="expForm">
+    <h2>${editing?"Editar gasto":"Nuevo gasto"}</h2>
+    ${chips}
+    <div class="row">
+      <label style="flex:1 1 120px" for="eAmt">Importe<input id="eAmt" inputmode="decimal" value="${editing?esc(editing.amount):""}" placeholder="0,00"></label>
+      <label style="flex:0 1 110px" for="eCur">Divisa<input id="eCur" list="curList" value="${esc(cur)}" maxlength="3" autocomplete="off" style="text-transform:uppercase"></label>
+    </div>
+    <datalist id="curList">${CURS.map(c=>'<option value="'+c+'">').join("")}</datalist>
+    <div id="rateWrap" ${cur==="EUR"?"hidden":""}>
+      <div class="row">
+        <label style="flex:1 1 170px" for="eRate">Cambio<div class="ratebox"><span>1 € =</span><input id="eRate" inputmode="decimal" value="${esc(rate)}" placeholder="tasa"><span id="rateCur">${esc(cur)}</span></div></label>
+        <label style="flex:1 1 140px" for="eEur">O importe en € del banco<input id="eEur" inputmode="decimal" placeholder="opcional"></label>
+      </div>
+      <p class="hint" id="ratePreview"></p>
+    </div>
+    <label for="eDesc">Descripción<input id="eDesc" value="${editing?esc(editing.desc):""}" placeholder="Ej. 18 L gasolina 95" autocomplete="off"></label>
+    <p class="err" id="expErr" hidden></p>
+    <div class="row">
+      <button class="btn primary" type="button" id="expSave">${editing?"Guardar cambios":"Añadir gasto"}</button>
+      ${editing?'<button class="btn ghost" type="button" id="expCancel">Cancelar</button>':""}
+      ${editing?(ui.confirmDel===editing.id?'<span class="confirmbox">¿Mandar a la papelera? <button class="btn danger small" type="button" id="expDelYes">Sí</button><button class="btn ghost small" type="button" id="expDelNo">No</button></span>':'<button class="btn danger" type="button" id="expDel">Borrar</button>'):""}
+    </div>
+  </section>
+
+  <section class="card"><div class="cardhead"><h2>Diario</h2><button class="btn primary" type="button" id="toDiary">Escribir en el diario</button></div>
+    <p class="hint">${dayPosts?dayPosts+(dayPosts===1?" publicación":" publicaciones")+" este día.":"Fotos y texto del día, con la ruta debajo."}</p></section>`;
+}
+function val(id){ const el=document.getElementById(id); return el?el.value.trim():""; }
+function updateRatePreview(){
+  const cur=(val("eCur")||"EUR").toUpperCase(); const wrap=document.getElementById("rateWrap"); if(!wrap) return;
+  wrap.hidden=cur==="EUR"; document.getElementById("rateCur").textContent=cur;
+  const amt=num(val("eAmt")),rate=num(val("eRate")),ee=num(val("eEur")); const p=document.getElementById("ratePreview"); const k=rates()[cur];
+  if(cur==="EUR"){ p.textContent=""; return; }
+  if(amt!=null&&ee!=null&&ee>0) p.textContent="Se guardará "+eur(ee)+" (cambio real 1 € = "+fNum.format(amt/ee)+" "+cur+")";
+  else if(amt!=null&&rate) p.textContent="≈ "+eur(amt/rate)+(k&&k.date?" · cambio guardado el "+shortDate(k.date):"");
+  else p.textContent=k?"Se usa tu último cambio de "+cur+". Cámbialo si ha variado.":"Primera vez con "+cur+": pon el cambio o el importe en € que te cobró el banco.";
+}
+let fieldTimer=null;
+function bindDay(){
+  const go=d=>{ ui.date=d; ui.editId=null; ui.confirmDel=null; ui.confirmTrack=false; ui.dayRouteMsg=ui.dayRouteErr=""; render(); };
+  document.getElementById("prevDay").onclick=()=>go(addDays(ui.date,-1));
+  document.getElementById("nextDay").onclick=()=>go(addDays(ui.date,1));
+  document.getElementById("todayBtn").onclick=()=>go(todayStr());
+  document.getElementById("dateIn").onchange=e=>{ if(DATE_RE.test(e.target.value)) go(e.target.value); };
+  const commit=()=>{
+    const from=val("fFrom"),to=val("fTo"),kmRaw=document.getElementById("fKm").value.trim(),country=val("fCountry"),notes=document.getElementById("fNotes").value;
+    const cur=getDay(ui.date); const km=kmRaw===""?null:(num(kmRaw)==null?cur.km:Math.max(0,r2(num(kmRaw))));
+    if(cur.from===from&&cur.to===to&&cur.km===km&&cur.country===country&&cur.notes===notes) return;
+    saveDayFields(ui.date,{from,to,km,country,notes});
+    const ow=document.querySelector(".odo-wrap"); if(ow){ const all=[...R.values()].filter(x=>x.kind==="day"&&x.date<=ui.date).reduce((s,x)=>s+(x.km||0),0); ow.innerHTML="Cuentakilómetros del viaje "+odo(all,6)+" km"; }
+  };
+  ["fFrom","fTo","fKm","fCountry","fNotes"].forEach(id=>{ const el=document.getElementById(id);
+    el.addEventListener("input",()=>{ clearTimeout(fieldTimer); fieldTimer=setTimeout(commit,500); });
+    el.addEventListener("blur",()=>{ clearTimeout(fieldTimer); commit(); }); });
+  const uk=document.getElementById("useTrackKm"); if(uk) uk.onclick=()=>{ saveDayFields(ui.date,{km:r1(trackFor(ui.date).stats.km)}); render(); };
+  document.querySelectorAll("[data-cat]").forEach(b=>b.onclick=()=>{ ui.cat=b.dataset.cat; document.querySelectorAll("[data-cat]").forEach(x=>x.setAttribute("aria-pressed",String(x===b))); });
+  document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>{ ui.editId=b.dataset.edit; ui.confirmDel=null; const e=liveExp(getDay(ui.date)).find(x=>x.id===ui.editId); if(e) ui.cat=e.cat; render(); document.getElementById("expForm").scrollIntoView({block:"start"}); });
+  ["eAmt","eCur","eRate","eEur"].forEach(id=>document.getElementById(id).addEventListener("input",()=>{
+    if(id==="eCur"){ const c=val("eCur").toUpperCase(); const k=rates()[c]; if(k&&c.length===3) document.getElementById("eRate").value=k.rate; } updateRatePreview(); }));
+  updateRatePreview();
+  document.getElementById("expSave").onclick=saveExpense;
+  const on=(id,fn)=>{ const el=document.getElementById(id); if(el) el.onclick=fn; };
+  on("expCancel",()=>{ ui.editId=null; ui.confirmDel=null; render(); });
+  on("expDel",()=>{ ui.confirmDel=ui.editId; render(); });
+  on("expDelYes",()=>{ setExpenseDel(ui.date,ui.editId,true); ui.editId=null; ui.confirmDel=null; render(); toast("Gasto en la papelera (se puede recuperar en Datos)"); });
+  on("expDelNo",()=>{ ui.confirmDel=null; render(); });
+  on("trkDel",()=>{ ui.confirmTrack=true; render(); });
+  on("trkDelNo",()=>{ ui.confirmTrack=false; render(); });
+  on("trkDelYes",()=>{ const t=clone(R.get("t_"+ui.date)); t.del=true; t.updatedAt=stamp(t.updatedAt); setRec("t_"+ui.date,t); ui.confirmTrack=false; render(); toast("Ruta en la papelera"); });
+  on("toDiary",()=>{ openComposer(null,ui.date); ui.tab="diario"; render(); window.scrollTo(0,0); });
+  document.getElementById("dayGpx").onchange=async e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; ui.dayRouteErr=ui.dayRouteMsg="";
+    try{ const raw=cleanPts(await parseRouteFile(f)); let pts=raw.filter(p=>ymd(new Date(p.t))===ui.date); if(pts.length<2) pts=raw;
+      if(pts.length<2) throw new Error("El archivo no tiene puntos con hora y coordenadas.");
+      const rec=makeTrackRec(ui.date,pts,/\.gpx$/i.test(f.name)?"gpx":"polarsteps"); setRec("t_"+ui.date,rec);
+      const d=getDay(ui.date); if(d.km==null) saveDayFields(ui.date,{km:r1(rec.stats.km)});
+      await savedToDisk(); ui.dayRouteMsg="Ruta guardada: "+fNum1.format(rec.stats.km)+" km."; }
+    catch(err){ ui.dayRouteErr=err&&err.message?err.message:"No se pudo leer el archivo."; }
+    render(); };
+}
+function saveExpense(){
+  const errEl=document.getElementById("expErr"); const fail=m=>{ errEl.textContent=m; errEl.hidden=false; };
+  const amount=num(val("eAmt")),cur=(val("eCur")||"EUR").toUpperCase();
+  if(amount==null||amount<=0) return fail("Escribe un importe mayor que cero.");
+  if(!/^[A-Z]{3}$/.test(cur)) return fail("La divisa son 3 letras, por ejemplo GEL o TRY.");
+  let rate=1,ev=amount;
+  if(cur!=="EUR"){ const ee=num(val("eEur")),rr=num(val("eRate"));
+    if(ee!=null&&ee>0){ ev=ee; rate=amount/ee; } else if(rr!=null&&rr>0){ rate=rr; ev=amount/rr; }
+    else return fail("Falta el cambio: cuántos "+cur+" vale 1 € o el importe en € que cobró el banco.");
+    saveRate(cur,rate); }
+  const prev=ui.editId?getDay(ui.date).expenses.find(e=>e.id===ui.editId):null;
+  const exp={id:ui.editId||uid(),cat:ui.cat,desc:val("eDesc"),amount:r2(amount),cur,rate,eur:r2(ev),at:prev?prev.at:Date.now(),del:false};
+  const wasEdit=!!ui.editId; upsertExpense(ui.date,exp); ui.editId=null; ui.confirmDel=null; render();
+  toast(wasEdit?"Gasto actualizado":"Gasto añadido · "+eur(exp.eur));
+}
+
+/* ================= Vista: Diario ================= */
+function saveDraft(){ try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(ui.draft)); }catch(e){} }
+function clearDraft(){ try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} }
+function openComposer(post,date){
+  if(post) ui.draft={id:post.id,date:post.date,place:post.place,text:post.text,photos:clone(post.photos),route:post.route,createdAt:post.createdAt};
+  else ui.draft={id:null,date:date||ui.date,place:getDay(date||ui.date).to||"",text:"",photos:[],route:true,createdAt:0};
+  ui.draftErr=""; saveDraft();
+}
+function viewComposer(){
+  const dr=ui.draft; const t=trackFor(dr.date); const left=10-dr.photos.length;
+  const thumbs=dr.photos.map((ph,i)=>'<div class="pthumb"><img data-pid="'+esc(ph.pid)+'" '+(ph.asset?'data-asset="'+esc(ph.asset)+'"':"")+' alt="Foto '+(i+1)+'">'+
+    (i===0?'<span class="cov">Portada</span>':'<button type="button" class="l" data-left="'+i+'" aria-label="Mover a la izquierda">◀ Mover</button>')+
+    '<button type="button" class="x" data-rmphoto="'+i+'" aria-label="Quitar foto '+(i+1)+'">×</button></div>').join("");
+  return `<section class="card" aria-label="Publicación">
+    <div class="cardhead"><h2>${dr.id?"Editar publicación":"Nueva publicación"}</h2><span class="muted mono" style="font-size:.8rem">${dr.photos.length}/10 fotos</span></div>
+    <div class="pgrid">${thumbs}${left>0?'<label class="addtile" for="pFiles"><b>+</b>Añadir fotos<input type="file" id="pFiles" class="vh" accept="image/*" multiple></label>':""}</div>
+    <div class="row">
+      <label style="flex:0 1 180px" for="pDate">Fecha<input type="date" id="pDate" value="${esc(dr.date)}"></label>
+      <label class="grow" for="pPlace">Ubicación<input id="pPlace" value="${esc(dr.place)}" placeholder="Ej. Kazbegi, Georgia" autocomplete="off"></label>
+    </div>
+    <label for="pText">Texto<textarea id="pText" rows="7" placeholder="Qué ha pasado hoy…">${esc(dr.text)}</textarea></label>
+    <label class="check" for="pRoute"><input type="checkbox" id="pRoute" ${dr.route?"checked":""} ${t?"":"disabled"}> ${t?"Mostrar la ruta del día ("+fNum1.format(t.stats.km)+" km)":"No hay ruta guardada ese día"}</label>
+    ${ui.draftErr?'<p class="err">'+esc(ui.draftErr)+'</p>':""}
+    <div class="row"><button class="btn primary" type="button" id="pSave">${dr.id?"Guardar cambios":"Publicar"}</button><button class="btn ghost" type="button" id="pCancel">Cancelar</button></div>
+    <p class="hint">El borrador se guarda solo: si cierras la app, sigue aquí al volver.</p>
+  </section>`;
+}
+function postCard(p){
+  const dn=tripDayNum(p.date); const long=p.text.length>480&&!ui.expanded.has(p.id);
+  const imgs=p.photos.map((ph,i)=>'<img data-pid="'+esc(ph.pid)+'" '+(ph.asset?'data-asset="'+esc(ph.asset)+'"':"")+' alt="Foto '+(i+1)+' de '+p.photos.length+(p.place?", "+esc(p.place):"")+'" loading="lazy">').join("");
+  return `<article class="post" aria-label="Publicación del ${esc(shortDate(p.date))}">
+    <header class="phead"><div style="min-width:0"><div class="pplace">${esc(p.place||"Sin ubicación")}</div><div class="pmeta">${esc(longDate(p.date))}${dn?" · día "+dn:""}</div></div>
+      <div class="pacts"><button class="btn small ghost" type="button" data-editpost="${esc(p.id)}">Editar</button><button class="btn small ghost" type="button" data-delpost="${esc(p.id)}" aria-label="Borrar publicación">Borrar</button></div></header>
+    ${ui.confirmPost===p.id?'<div style="padding:0 14px 10px"><span class="confirmbox">¿Mandar a la papelera? Se puede recuperar en Datos. <button class="btn danger small" type="button" data-delyes="'+esc(p.id)+'">Sí</button><button class="btn ghost small" type="button" data-delno="1">No</button></span></div>':""}
+    ${p.photos.length?'<div class="carwrap"><div class="car" data-car="'+esc(p.id)+'">'+imgs+'</div>'+(p.photos.length>1?'<span class="carcount" id="cc_'+esc(p.id)+'">1 / '+p.photos.length+'</span>':"")+'</div>':""}
+    ${p.text?'<div class="ptext">'+esc(long?p.text.slice(0,480).trimEnd()+"…":p.text)+'</div>'+(long?'<button class="more" type="button" data-more="'+esc(p.id)+'">Ver más</button>':""):""}
+    ${p.route&&trackFor(p.date)?routeBlock(p.date):""}
+  </article>`;
+}
+function viewDiary(){
+  const ps=posts(); const nPh=ps.reduce((a,p)=>a+p.photos.length,0);
+  return `${ui.draft?viewComposer():`<section class="card"><div class="feedhead"><div><h2>Diario</h2><p class="hint">${ps.length} ${ps.length===1?"publicación":"publicaciones"} · ${nPh} ${nPh===1?"foto":"fotos"}</p></div><button class="btn primary" type="button" id="newPost">Nueva publicación</button></div></section>`}
+    ${ps.length?ps.map(postCard).join(""):(ui.draft?"":'<div class="empty">El diario está vacío. Crea la primera publicación con hasta 10 fotos, un texto y la ruta del día.</div>')}`;
+}
+function bindDiary(){
+  const on=(id,fn)=>{ const el=document.getElementById(id); if(el) el.onclick=fn; };
+  on("newPost",()=>{ openComposer(null,ui.date); render(); window.scrollTo(0,0); });
+  if(ui.draft){
+    const sync=()=>{ ui.draft.date=DATE_RE.test(val("pDate"))?val("pDate"):ui.draft.date; ui.draft.place=document.getElementById("pPlace").value; ui.draft.text=document.getElementById("pText").value; ui.draft.route=document.getElementById("pRoute").checked; saveDraft(); };
+    ["pPlace","pText"].forEach(id=>document.getElementById(id).addEventListener("input",sync));
+    document.getElementById("pRoute").onchange=sync;
+    document.getElementById("pDate").onchange=()=>{ sync(); render(); };
+    const pf=document.getElementById("pFiles");
+    if(pf) pf.onchange=async e=>{ sync(); const files=[...(e.target.files||[])]; const room=10-ui.draft.photos.length; ui.draftErr="";
+      if(files.length>room) ui.draftErr="Máximo 10 fotos por publicación: se han añadido "+room+".";
+      for(const f of files.slice(0,room)){ try{ const {blob,w,h}=await processImage(f); const pid=uid(); const saved=await putPhoto(pid,{blob,w,h,asset:null,at:Date.now()});
+          if(!saved) ui.draftErr="Este navegador no deja guardar fotos en el móvil; súbelas con conexión para que queden en la nube."; ui.draft.photos.push({pid,w,h,asset:null}); saveDraft(); }
+        catch(err){ ui.draftErr="No se pudo leer una de las fotos ("+f.name+")."; } }
+      render(); };
+    document.querySelectorAll("[data-rmphoto]").forEach(b=>b.onclick=()=>{ sync(); ui.draft.photos.splice(+b.dataset.rmphoto,1); saveDraft(); render(); });
+    document.querySelectorAll("[data-left]").forEach(b=>b.onclick=()=>{ sync(); const i=+b.dataset.left; const a=ui.draft.photos; [a[i-1],a[i]]=[a[i],a[i-1]]; saveDraft(); render(); });
+    on("pCancel",()=>{ ui.draft=null; clearDraft(); render(); });
+    on("pSave",()=>{ sync(); const dr=ui.draft;
+      if(!dr.photos.length&&!dr.text.trim()){ ui.draftErr="Añade al menos una foto o un texto."; render(); return; }
+      const id=dr.id||uid(); const prev=R.get("p_"+id);
+      setRec("p_"+id,{id,date:dr.date,place:dr.place.trim(),text:dr.text,photos:dr.photos,route:dr.route,createdAt:dr.createdAt||Date.now(),updatedAt:stamp(prev&&prev.updatedAt),del:false,delAt:0});
+      ui.draft=null; clearDraft(); render(); toast(dr.id?"Publicación actualizada":"Publicado en el diario"); });
+  }
+  document.querySelectorAll("[data-editpost]").forEach(b=>b.onclick=()=>{ const p=R.get("p_"+b.dataset.editpost); if(p){ openComposer(p); render(); window.scrollTo(0,0); } });
+  document.querySelectorAll("[data-delpost]").forEach(b=>b.onclick=()=>{ ui.confirmPost=b.dataset.delpost; render(); });
+  document.querySelectorAll("[data-delno]").forEach(b=>b.onclick=()=>{ ui.confirmPost=null; render(); });
+  document.querySelectorAll("[data-delyes]").forEach(b=>b.onclick=()=>{ const p=clone(R.get("p_"+b.dataset.delyes)); p.del=true; p.delAt=Date.now(); p.updatedAt=stamp(p.updatedAt); setRec("p_"+p.id,p); ui.confirmPost=null; render(); toast("Publicación en la papelera"); });
+  document.querySelectorAll("[data-more]").forEach(b=>b.onclick=()=>{ ui.expanded.add(b.dataset.more); render(); });
+  document.querySelectorAll("[data-car]").forEach(c=>c.addEventListener("scroll",()=>{ const i=Math.round(c.scrollLeft/Math.max(1,c.clientWidth)); const el=document.getElementById("cc_"+c.dataset.car); if(el) el.textContent=(i+1)+" / "+c.children.length; },{passive:true}));
+}
+
+/* ================= Vista: Resumen ================= */
+function viewSummary(){
+  const p=period(ui.period,ui.anchor), s=summarize(p.start,p.end), trks=tracksIn(p.start,p.end);
+  const maxCat=Math.max(1,...Object.values(s.byCat)); const cats=Object.entries(s.byCat).sort((a,b)=>b[1]-a[1]);
+  const seg=[["dia","Día"],["semana","Semana"],["mes","Mes"],["anio","Año"],["todo","Viaje"]].map(([k,n])=>'<button type="button" data-per="'+k+'" aria-pressed="'+(ui.period===k)+'">'+n+'</button>').join("");
+  const food=["desayuno","comida","merienda","cena"].reduce((a,k)=>a+(s.byCat[k]||0),0), fuel=s.byCat.gasolina||0;
+  const rows=s.days.filter(d=>d.km!=null||liveExp(d).length||d.from||d.to).map(d=>'<tr class="clickable" data-goto="'+d.date+'"><td>'+esc(shortDate(d.date))+'</td><td>'+esc(d.from||"—")+' → '+esc(d.to||"—")+(d.country?'<div class="muted" style="font-size:.8rem">'+esc(d.country)+'</div>':"")+'</td><td class="num">'+(d.km!=null?fKm.format(d.km):"—")+'</td><td class="num">'+eur(dayTotal(d))+'</td></tr>').join("");
+  const curRows=Object.entries(s.byCur).sort((a,b)=>b[1].eur-a[1].eur).map(([c,v])=>'<tr><td class="mono">'+esc(c)+'</td><td class="num">'+esc(money(r2(v.amount),c))+'</td><td class="num">'+eur(v.eur)+'</td><td class="num">'+(c==="EUR"?"—":fNum.format(v.amount/v.eur))+'</td></tr>').join("");
+  const empty=s.active===0&&!trks.length;
+  return `<section class="card">
+    <div class="seg" role="group" aria-label="Periodo">${seg}</div>
+    <div class="periodnav">${ui.period!=="todo"?'<button class="btn" type="button" id="perPrev" aria-label="Anterior">‹</button>':""}<div class="lbl">${esc(p.label)}</div>${ui.period!=="todo"?'<button class="btn" type="button" id="perNext" aria-label="Siguiente">›</button>':""}</div>
+  </section>
+  ${empty?'<div class="empty">No hay nada registrado en este periodo.</div>':`
+  ${trks.length?'<section class="card"><h2>Mapa</h2><div class="mapwrap" data-mk="'+p.start+'|'+p.end+'"><canvas class="map" data-maprange="'+p.start+'|'+p.end+'" role="img" aria-label="Mapa de las rutas del periodo"></canvas><button class="mapbtn" type="button" data-bigmap="'+p.start+'|'+p.end+'">Ampliar</button></div><p class="hint">'+trks.length+(trks.length===1?" ruta":" rutas")+' · verde la salida, oscuro la llegada.</p></section>':""}
+  <div class="stats">
+    <div class="stat"><b>Kilómetros</b><span>${fKm.format(s.km)}</span></div>
+    <div class="stat"><b>Gasto total</b><span>${eur(s.eur)}</span></div>
+    <div class="stat"><b>Días en moto</b><span>${s.ridden}</span></div>
+    <div class="stat"><b>Tiempo en moto</b><span>${s.moving?dur(s.moving):"—"}</span></div>
+    <div class="stat"><b>Velocidad media</b><span>${s.moving?fNum1.format(s.trackKm/(s.moving/3600))+" km/h":"—"}</span></div>
+    <div class="stat"><b>Media / día</b><span>${eur(s.active?s.eur/s.active:0)}</span></div>
+    <div class="stat"><b>Coste / km</b><span>${s.km?fNum.format(s.eur/s.km)+" €":"—"}</span></div>
+    <div class="stat"><b>Gasolina / 100 km</b><span>${s.km&&fuel?eur(fuel/s.km*100):"—"}</span></div>
+  </div>
+  ${cats.length?`<section class="card"><h2>En qué se va el dinero</h2>
+    <div class="legend">${Object.entries(GROUPS).map(([g,n])=>'<span><i class="g-'+g+'"></i>'+n+' '+eur(s.byGroup[g]||0)+'</span>').join("")}</div>
+    <div class="bars">${cats.map(([k,v])=>'<div class="bar-row"><span>'+esc(CAT[k].n)+'</span><div class="track"><div class="fill g-'+CAT[k].g+'" style="width:'+Math.max(2,v/maxCat*100)+'%"></div></div><span class="mono">'+eur(v)+'</span></div>').join("")}</div>
+    ${food?'<p class="hint">Comidas: '+eur(food)+' en total · '+eur(food/Math.max(1,s.active))+' por día.</p>':""}</section>`:""}
+  ${curRows?`<section class="card"><h2>Divisas pagadas</h2><div class="tablewrap"><table><thead><tr><th>Divisa</th><th class="num">Pagado</th><th class="num">En euros</th><th class="num">1 € =</th></tr></thead><tbody>${curRows}</tbody></table></div></section>`:""}
+  ${ui.period!=="dia"&&rows?`<section class="card"><h2>Etapas</h2><div class="tablewrap"><table><thead><tr><th>Fecha</th><th>Recorrido</th><th class="num">Km</th><th class="num">Gasto</th></tr></thead><tbody>${rows}</tbody></table></div><p class="hint">Toca una etapa para abrir ese día.</p></section>`:""}`}`;
+}
+
+/* ================= Vista: Datos ================= */
+function syncDetailHtml(){
+  const st=!cfg.url?"Sin conectar":sync.busy?"Guardando…":sync.state==="error"?"Hay un problema (ver abajo)":(navigator.onLine===false||sync.state==="offline")?"Sin conexión; se sube sola al volver":"Conectado";
+  return '<div class="kv"><span>Guardado en el móvil</span><b>'+(idbOk||mirrorOk?"Sí":"No")+'</b>'+
+    '<span>Protección contra borrado del navegador</span><b>'+(persistent===true?"Activada":persistent===false?"No concedida":"—")+'</b>'+
+    '<span>Google Drive</span><b>'+esc(st)+'</b><span>Cambios por subir</span><b class="mono">'+pending.size+'</b>'+
+    '<span>Fotos por subir</span><b class="mono">'+(cfg.url?sync.photosLeft:photosPendingCount())+'</b>'+
+    '<span>Última vez en Drive</span><b class="mono">'+(meta.lastSyncAt?new Date(meta.lastSyncAt).toLocaleString("es-ES",{dateStyle:"short",timeStyle:"short"}):"—")+'</b></div>'+
+    (sync.state==="error"&&sync.lastError?'<p class="err">'+esc(sync.lastError)+'</p>':"");
+}
+function trashItems(){
+  const out=[];
+  for(const v of R.values()){
+    if(v.kind==="day") v.expenses.filter(e=>e.del).forEach(e=>out.push({type:"exp",date:v.date,id:e.id,label:shortDate(v.date)+" · "+CAT[e.cat].n+" · "+(e.cur==="EUR"?eur(e.amount):money(e.amount,e.cur))}));
+    else if(v.kind==="post"&&v.del) out.push({type:"post",date:v.date,id:v.id,label:shortDate(v.date)+" · Diario · "+(v.place||v.text.slice(0,40)||"publicación")});
+    else if(v.kind==="track"&&v.del) out.push({type:"track",date:v.date,id:v.date,label:shortDate(v.date)+" · Ruta · "+fNum1.format(v.stats.km)+" km"});
+  }
+  return out.sort((a,b)=>a.date<b.date?1:-1);
+}
+function driveSection(){
+  const setup=!cfg.url||ui.editConn;
+  if(setup) return `<section class="card" id="driveCard"><h2>Conectar Google Drive</h2>
+    <p class="hint">Para tener copia de todo fuera del móvil. Se hace una sola vez siguiendo la guía de instalación.</p>
+    <label for="cfgKey">1 · Clave secreta<div class="ratebox" style="grid-template-columns:1fr auto"><input id="cfgKey" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(ui.cfgKey!=null?ui.cfgKey:cfg.key)}" class="mono" style="font-size:13px"><button class="btn small" type="button" id="copyKey">Copiar</button></div></label>
+    <p class="hint">Primera vez: copia esta clave y pégala en el script de Google, en la línea CLAVE. En un móvil nuevo: borra la que sale y pega la que ya tiene el script. No la compartas con nadie.</p>
+    <label for="cfgUrl">2 · Dirección del script<input id="cfgUrl" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(ui.cfgUrl!=null?ui.cfgUrl:cfg.url)}"></label>
+    <div class="row"><button class="btn primary" type="button" id="testConn" ${ui.driveBusy?"disabled":""}>Probar y conectar</button>${ui.editConn?'<button class="btn ghost" type="button" id="cancelConn">Cancelar</button>':""}</div>
+    ${ui.driveErr?'<p class="err">'+esc(ui.driveErr)+'</p>':""}${ui.driveMsg?'<p class="okmsg">'+esc(ui.driveMsg)+'</p>':""}
+  </section>`;
+  return `<section class="card" id="driveCard"><h2>Google Drive</h2>
+    <p class="hint">Todo se guarda solo en la carpeta «Cuaderno de Ruta» de tu Drive: el estado más reciente, una copia por día que no se modifica nunca, cada ruta y cada foto.</p>
+    <div class="row"><button class="btn" type="button" id="syncNow" ${sync.busy?"disabled":""}>Sincronizar ahora</button><button class="btn" type="button" id="restoreDrive" ${ui.driveBusy?"disabled":""}>Recuperar desde Drive</button><button class="btn ghost" type="button" id="editConn">Cambiar conexión</button></div>
+    ${ui.driveErr?'<p class="err">'+esc(ui.driveErr)+'</p>':""}${ui.driveMsg?'<p class="okmsg">'+esc(ui.driveMsg)+'</p>':""}
+    <h3>Copias diarias en Drive</h3>
+    <div id="driveCopies">${ui.copies?(ui.copies.length?ui.copies.slice().reverse().slice(0,60).map(f=>'<div class="trashrow"><span>'+esc(f.name.replace(/^copia-|\.json\.gz$/g,""))+' · '+fNum1.format((f.size||0)/1024)+' KB</span><button class="btn small" type="button" data-drvcopy="'+esc(f.name)+'">Restaurar</button></div>').join(""):'<p class="hint">Todavía no hay copias diarias.</p>'):'<button class="btn small" type="button" id="loadCopies">Ver copias</button>'}</div>
+  </section>`;
+}
+function viewData(){
+  const rs=Object.entries(rates()); const r=ui.importResult; const tr=trashItems(); const xr=ui.xReady;
+  return `
+  <section class="card"><h2>Guardado</h2>
+    <div id="syncDetail">${syncDetailHtml()}</div>
+    <p class="hint">Cada cambio se guarda al momento en el móvil, con o sin internet, y no se pierde al cerrar la app. Cuando hay conexión se copia solo a Google Drive.</p>
+  </section>
+
+  ${driveSection()}
+
+  <section class="card"><h2>Descargar el viaje</h2>
+    <p class="hint">Un libro en PDF con mapas, etapas, gastos y el diario con fotos, o una presentación de PowerPoint con una diapositiva por publicación.</p>
+    <label for="xPer">Periodo<select id="xPer"><option value="todo" ${ui.xPer==="todo"?"selected":""}>Todo el viaje</option><option value="mes" ${ui.xPer==="mes"?"selected":""}>Mes del día abierto</option><option value="anio" ${ui.xPer==="anio"?"selected":""}>Año del día abierto</option><option value="rango" ${ui.xPer==="rango"?"selected":""}>Elegir fechas</option></select></label>
+    ${ui.xPer==="rango"?'<div class="row"><label class="grow" for="xFrom">Desde<input type="date" id="xFrom" value="'+esc(ui.xFrom)+'"></label><label class="grow" for="xTo">Hasta<input type="date" id="xTo" value="'+esc(ui.xTo)+'"></label></div>':""}
+    <div class="row"><button class="btn primary" type="button" id="xPdf" ${ui.xBusy?"disabled":""}>Crear libro (PDF)</button><button class="btn" type="button" id="xPptx" ${ui.xBusy?"disabled":""}>Crear presentación</button></div>
+    <p class="progress" id="xMsg" aria-live="polite">${esc(ui.xMsg)}</p>
+    ${xr?'<div class="row"><button class="btn primary" type="button" id="xSave">Guardar '+(xr.kind==="pdf"?"el PDF":"la presentación")+'</button>'+(cfg.url?'<button class="btn" type="button" id="xToDrive">Guardar en Drive</button>':"")+'</div>':""}
+  </section>
+
+  <section class="card"><h2>Importar rutas de Polarsteps</h2>
+    <ol class="hint" style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px">
+      <li>En Polarsteps: Perfil → Ajustes → Cuenta → <b>Descargar mis datos</b>. Llega un .zip.</li>
+      <li>Súbelo aquí (o el <span class="mono">locations.json</span> de dentro). También vale un .gpx de cualquier GPS.</li>
+      <li>Se calculan los km, el tiempo y el mapa de cada día.</li>
+    </ol>
+    <label for="routeFile">Archivo<input type="file" id="routeFile" accept=".zip,.json,.gpx,application/json,application/zip,application/gpx+xml"></label>
+    ${ui.importErr?'<p class="err">'+esc(ui.importErr)+'</p>':""}${ui.importMsg?'<p class="okmsg">'+esc(ui.importMsg)+'</p>':""}
+    ${r&&r.length?`<p class="hint">Marca los días a rellenar. Se añade la ruta con su mapa, y solo se rellenan los km, desde, hasta y país que estén vacíos: lo escrito a mano no se cambia nunca. Gastos, notas y diario no se tocan.</p>
+      <div class="row"><button class="btn ghost small" type="button" id="selEmpty">Días sin ruta</button><button class="btn ghost small" type="button" id="selAll">Todos</button><button class="btn ghost small" type="button" id="selNone">Ninguno</button></div>
+      <div class="tablewrap"><table><thead><tr><th></th><th>Fecha</th><th>Recorrido</th><th class="num">Km</th></tr></thead><tbody>
+      ${r.map((x,i)=>'<tr><td><input type="checkbox" id="imp'+i+'" data-imp="'+i+'" '+(x.sel?"checked":"")+' style="width:auto" aria-label="Importar '+esc(shortDate(x.date))+'"></td><td>'+esc(shortDate(x.date))+'</td><td>'+esc(x.from||"—")+' → '+esc(x.to||"—")+'</td><td class="num">'+fKm.format(x.km)+'</td></tr>').join("")}
+      </tbody></table></div><button class="btn primary" type="button" id="applyImp">Aplicar a los días marcados</button>`:""}
+  </section>
+
+  <section class="card"><h2>Copias de seguridad</h2>
+    <p class="hint">Restaurar nunca borra nada: solo añade lo que falte y actualiza con versiones más nuevas.</p>
+    <div class="row"><button class="btn" type="button" id="expJson">Descargar copia completa</button><button class="btn" type="button" id="expCsv">Descargar gastos (CSV)</button></div>
+    <label for="impJson">Restaurar desde un archivo de copia<input type="file" id="impJson" accept=".json,application/json"></label>
+    ${ui.dataMsg?'<p class="okmsg">'+esc(ui.dataMsg)+'</p>':""}
+    <h3>Copias automáticas en este móvil</h3><div id="snapList" class="hint">Cargando…</div>
+  </section>
+
+  <section class="card"><h2>Papelera</h2>
+    ${tr.length?'<div>'+tr.map(t=>'<div class="trashrow"><span>'+esc(t.label)+'</span><button class="btn small" type="button" data-restore="'+t.type+'|'+esc(t.date)+'|'+esc(t.id)+'">Recuperar</button></div>').join("")+'</div><p class="hint">Lo que se borra queda aquí para siempre.</p>':'<p class="hint">Vacía. Lo que se borre (gastos, publicaciones, rutas) aparecerá aquí y se podrá recuperar.</p>'}
+  </section>
+
+  <section class="card"><h2>Cambios de divisa guardados</h2>
+    ${rs.length?'<div style="display:flex;flex-direction:column;gap:8px">'+rs.map(([c,v])=>'<div class="rate-row"><span class="mono">'+esc(c)+'</span><input id="rate_'+esc(c)+'" data-rate="'+esc(c)+'" inputmode="decimal" value="'+esc(v.rate)+'" aria-label="Cambio '+esc(c)+'"><span class="muted" style="font-size:.8rem">'+esc(v.date?shortDate(v.date):"")+'</span></div>').join("")+'</div><p class="hint">1 € = X de la divisa. Rellena el siguiente gasto; los ya apuntados mantienen su cambio.</p>':'<div class="empty">Cuando apuntes un gasto en otra divisa, su cambio aparecerá aquí para usarlo sin internet.</div>'}
+  </section>`;
+}
+async function offerFile(filename,data,mime){
+  const blob=data instanceof Blob?data:new Blob([data],{type:mime||"application/octet-stream"});
+  try{ const file=new File([blob],filename,{type:blob.type||mime||"application/octet-stream"});
+    if(/iPhone|iPad|iPod/.test(navigator.userAgent)&&navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],title:filename}); return true; } }
+  catch(e){ if(e&&e.name==="AbortError") return false; }
+  const u=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=u; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),60000);
+  return true;
+}
+function mergeImport(o){
+  let n=0; const recs={};
+  if(o&&o.recs&&typeof o.recs==="object") Object.assign(recs,o.recs);
+  if(o&&o.days&&typeof o.days==="object") for(const [d,v] of Object.entries(o.days)) recs["d_"+d]=v;
+  if(o&&o.settings&&!recs.settings) recs.settings=o.settings;
+  for(const [k,v] of Object.entries(recs)){ const s=sanitize(k,v); if(!s) continue; const l=R.get(k)||null; const m=mergeRec(k,l,s);
+    if(!l||!eq(m,l)){ R.set(k,m); dirty.add(k); pending.add(k); n++; } }
+  persist(); scheduleFlush(800); return n;
+}
+async function fillSnapList(){
+  const el=document.getElementById("snapList"); if(!el) return;
+  if(!idb){ el.textContent="No disponibles en este navegador."; return; }
+  try{ const keys=(await idbKeys("snaps")).sort().reverse(); if(!keys.length){ el.textContent="La primera se hace en unos segundos."; return; }
+    el.innerHTML=keys.map(k=>'<div class="trashrow"><span>'+esc(cap(longDate(k)))+'</span><button class="btn small" type="button" data-snap="'+esc(k)+'">Restaurar</button></div>').join("");
+    el.querySelectorAll("[data-snap]").forEach(b=>b.onclick=async()=>{ const s=await idbGet("snaps",b.dataset.snap); const n=s?mergeImport({recs:s.recs}):0; ui.dataMsg=n?n+" registros recuperados de la copia.":"La copia no tenía nada que no estuviera ya."; render(); });
+  }catch(e){ el.textContent="No se pudieron leer."; }
+}
+function exportRange(){
+  if(ui.xPer==="rango"&&DATE_RE.test(ui.xFrom)&&DATE_RE.test(ui.xTo)){ const [a,b]=ui.xFrom<=ui.xTo?[ui.xFrom,ui.xTo]:[ui.xTo,ui.xFrom]; return {start:a,end:b,label:shortDateY(a)+" – "+shortDateY(b)}; }
+  const p=period(ui.xPer==="mes"?"mes":ui.xPer==="anio"?"anio":"todo",ui.date); if(ui.xPer==="todo"&&p.start!==p.end) p.label=shortDateY(p.start)+" – "+shortDateY(p.end); return p;
+}
+function setXMsg(t){ ui.xMsg=t; const el=document.getElementById("xMsg"); if(el) el.textContent=t; }
+async function runExport(kind){
+  if(ui.xBusy) return; ui.xBusy=true; ui.xReady=null; render();
+  try{ const rg=exportRange(); const X=collectExport(rg); if(!X.dates.length) throw new Error("No hay nada registrado en ese periodo.");
+    const blob=kind==="pdf"?await buildPdf(X,setXMsg):await buildPptx(X,setXMsg);
+    ui.xReady={kind,blob,name:"cuaderno-de-ruta-"+rg.start+"_"+rg.end+(kind==="pdf"?".pdf":".pptx"),mime:kind==="pdf"?"application/pdf":"application/vnd.openxmlformats-officedocument.presentationml.presentation"};
+    ui.xMsg="Listo ("+fNum1.format(blob.size/1048576)+" MB). Pulsa para guardarlo.";
+  }catch(e){ ui.xMsg=(e&&e.message)||"No se pudo generar el archivo."; }
+  ui.xBusy=false; render();
+}
+function bindData(){
+  const on=(id,fn)=>{ const el=document.getElementById(id); if(el) el.onclick=fn; };
+  on("copyKey",()=>{ const inp=document.getElementById("cfgKey"); navigator.clipboard.writeText(inp.value.trim()).then(()=>toast("Clave copiada")).catch(()=>{ inp.select(); toast("Selecciónala y cópiala"); }); });
+  const ck=document.getElementById("cfgKey"); if(ck) ck.addEventListener("input",()=>{ ui.cfgKey=ck.value; });
+  const cu=document.getElementById("cfgUrl"); if(cu) cu.addEventListener("input",()=>{ ui.cfgUrl=cu.value; });
+  on("cancelConn",()=>{ ui.editConn=false; ui.cfgUrl=null; ui.cfgKey=null; ui.driveErr=ui.driveMsg=""; render(); });
+  on("editConn",()=>{ ui.editConn=true; ui.cfgUrl=cfg.url; ui.driveErr=ui.driveMsg=""; render(); });
+  on("testConn",async()=>{ const url=(document.getElementById("cfgUrl").value||"").trim(); const key=(document.getElementById("cfgKey").value||"").trim(); ui.cfgUrl=url; ui.cfgKey=key; ui.driveErr=ui.driveMsg="";
+    if(!validUrl(url)){ ui.driveErr="La dirección debe empezar por https://script.google.com/macros/s/ y terminar en /exec."; render(); return; }
+    if(!/^[A-Za-z0-9]{20,64}$/.test(key)){ ui.driveErr="La clave no es válida: debe tener entre 20 y 64 letras y números, sin espacios."; render(); return; }
+    ui.driveBusy=true; ui.driveMsg="Probando la conexión…"; render();
+    const prev={...cfg}; cfg.url=url; cfg.key=key;
+    try{ await api("ping",{},45000); saveCfg(); ui.editConn=false; ui.cfgUrl=null; ui.cfgKey=null; ui.driveMsg="Conectado. Se ha creado la carpeta «Cuaderno de Ruta» en tu Drive.";
+      if(countNonTrack()<3){ ui.driveMsg="Conectado. Buscando datos anteriores en Drive…"; render(); const n=await restoreFromDrive(); ui.driveMsg="Conectado."+(n?" Se han recuperado "+n+" registros de Drive.":""); }
+      scheduleFlush(300); }
+    catch(e){ cfg={...prev}; ui.driveMsg=""; ui.driveErr=apiErrMsg(e); }
+    ui.driveBusy=false; render(); });
+  on("syncNow",()=>{ runSync(); toast("Sincronizando…"); });
+  on("restoreDrive",async()=>{ ui.driveBusy=true; ui.driveErr=""; ui.driveMsg="Recuperando desde Drive…"; render();
+    try{ const n=await restoreFromDrive(); ui.driveMsg=n?n+" registros recuperados de Drive.":"Todo lo que hay en Drive ya estaba en el móvil."; }catch(e){ ui.driveMsg=""; ui.driveErr=apiErrMsg(e); }
+    ui.driveBusy=false; render(); });
+  on("loadCopies",async()=>{ ui.driveErr=""; try{ const l=await api("list",{folder:"copias"},60000); ui.copies=(l.files||[]).sort((a,b)=>a.name<b.name?-1:1); }catch(e){ ui.driveErr=apiErrMsg(e); } render(); });
+  document.querySelectorAll("[data-drvcopy]").forEach(b=>b.onclick=async()=>{ ui.driveErr=""; ui.driveMsg="Restaurando copia…"; render();
+    try{ const g=await api("get",{folder:"copias",name:b.dataset.drvcopy},120000); const n=mergeImport(JSON.parse(g.data)); ui.driveMsg=n?n+" registros recuperados de esa copia.":"Esa copia no tenía nada que no estuviera ya."; }
+    catch(e){ ui.driveMsg=""; ui.driveErr=apiErrMsg(e); } render(); });
+  document.getElementById("xPer").onchange=e=>{ ui.xPer=e.target.value; if(ui.xPer==="rango"&&!ui.xFrom){ const ds=allDates(); ui.xFrom=ds[0]||todayStr(); ui.xTo=ds[ds.length-1]||todayStr(); } render(); };
+  ["xFrom","xTo"].forEach(id=>{ const el=document.getElementById(id); if(el) el.onchange=()=>{ ui[id]=el.value; }; });
+  on("xPdf",()=>runExport("pdf")); on("xPptx",()=>runExport("pptx"));
+  on("xSave",()=>{ const x=ui.xReady; if(x) offerFile(x.name,x.blob,x.mime); });
+  on("xToDrive",async()=>{ const x=ui.xReady; if(!x) return;
+    if(x.blob.size>35*1048576){ setXMsg("El archivo es demasiado grande para enviarlo a Drive desde la app. Guárdalo y súbelo a mano."); return; }
+    setXMsg("Enviando a Drive…"); try{ await api("put",{folder:"documentos",name:x.name,b64:await blobToB64(x.blob),mime:x.mime},300000); setXMsg("Guardado en Drive, carpeta «documentos»."); }
+    catch(e){ setXMsg(apiErrMsg(e)); } });
+  document.getElementById("routeFile").onchange=async e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; ui.importErr=ui.importMsg=""; ui.importResult=null;
+    try{ const pts=await parseRouteFile(f); if(!pts.length) throw new Error("No hay puntos con fecha y coordenadas. Prueba con locations.json o trip.json de la exportación.");
+      const days=buildDays(pts); if(!days.length) throw new Error("El archivo tiene puntos pero no suma recorrido por días.");
+      ui.importResult=days.map(d=>({...d,sel:!trackFor(d.date)})); ui.importMsg=pts.length.toLocaleString("es-ES")+" puntos leídos · "+days.length+" días con ruta."; }
+    catch(err){ ui.importErr=(err&&err.message)||"No se pudo leer el archivo."; }
+    render(); };
+  document.querySelectorAll("[data-imp]").forEach(c=>c.onchange=()=>{ ui.importResult[+c.dataset.imp].sel=c.checked; });
+  const setSel=fn=>()=>{ ui.importResult.forEach(x=>x.sel=fn(x)); render(); };
+  on("selAll",setSel(()=>true)); on("selNone",setSel(()=>false)); on("selEmpty",setSel(x=>!trackFor(x.date)));
+  on("applyImp",async()=>{ const sel=ui.importResult.filter(x=>x.sel); if(!sel.length){ toast("No hay días marcados"); return; }
+    for(const x of sel){ if(x.pts.length>1) setRec("t_"+x.date,makeTrackRec(x.date,x.pts,"polarsteps")); const d=getDay(x.date);
+      saveDayFields(x.date,{km:d.km!=null?d.km:x.km,from:d.from||x.from,to:d.to||x.to,country:d.country||x.country}); }
+    await savedToDisk(); ui.importMsg=sel.length+" días actualizados con su ruta."; ui.importResult.forEach(x=>x.sel=false); render(); });
+  on("expJson",()=>offerFile("cuaderno-de-ruta-copia-"+todayStr()+".json",JSON.stringify(fullExport()),"application/json"));
+  on("expCsv",()=>{ const q=s=>'"'+String(s==null?"":s).replace(/"/g,'""')+'"'; const dec=n=>String(n).replace(".",",");
+    const lines=[["fecha","desde","hasta","pais","km_dia","categoria","descripcion","importe","divisa","cambio_1EUR","importe_EUR"].join(";")];
+    for(const d of [...R.values()].filter(v=>v.kind==="day").sort((a,b)=>a.date<b.date?-1:1)){ const ex=liveExp(d);
+      if(!ex.length) lines.push([d.date,q(d.from),q(d.to),q(d.country),d.km??"","","","","","",""].join(";"));
+      for(const e of ex) lines.push([d.date,q(d.from),q(d.to),q(d.country),d.km??"",q(CAT[e.cat].n),q(e.desc),dec(e.amount),e.cur,e.rate?dec(Math.round(e.rate*10000)/10000):"",dec(e.eur)].join(";")); }
+    offerFile("gastos-"+todayStr()+".csv","﻿"+lines.join("\n"),"text/csv"); });
+  document.getElementById("impJson").onchange=async e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return;
+    try{ const n=mergeImport(JSON.parse(await f.text())); ui.dataMsg=n?n+" registros restaurados o actualizados.":"La copia no tenía nada que no estuviera ya."; }
+    catch(err){ ui.dataMsg="Ese archivo no es una copia válida de Cuaderno de Ruta."; } render(); };
+  document.querySelectorAll("[data-restore]").forEach(b=>b.onclick=()=>{ const [type,date,id]=b.dataset.restore.split("|");
+    if(type==="exp") setExpenseDel(date,id,false);
+    else if(type==="post"){ const p=clone(R.get("p_"+id)); p.del=false; p.delAt=0; p.updatedAt=stamp(p.updatedAt); setRec("p_"+id,p); }
+    else if(type==="track"){ const t=clone(R.get("t_"+date)); t.del=false; t.updatedAt=stamp(t.updatedAt); setRec("t_"+date,t); }
+    render(); toast("Recuperado"); });
+  document.querySelectorAll("[data-rate]").forEach(inp=>inp.addEventListener("change",()=>{ const v=num(inp.value); if(v&&v>0){ saveRate(inp.dataset.rate,v); toast("Cambio de "+inp.dataset.rate+" actualizado"); } }));
+  fillSnapList();
+}
+
+/* ================= Exportación: datos comunes ================= */
+function collectExport(rg){
+  const dates=allDates().filter(d=>d>=rg.start&&d<=rg.end);
+  const ps=posts().filter(p=>p.date>=rg.start&&p.date<=rg.end).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.createdAt-b.createdAt);
+  const postsBy={}; ps.forEach(p=>(postsBy[p.date]=postsBy[p.date]||[]).push(p));
+  const sum=summarize(rg.start,rg.end);
+  return {...rg,dates,posts:ps,postsBy,tracks:tracksIn(rg.start,rg.end),sum};
+}
+function pdfSafe(s){ return String(s||"").normalize("NFC").replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/[–—]/g,"-").replace(/…/g,"...").replace(/→/g,"->").replace(/[^\n\x20-\x7E -ÿ€]/g,""); }
+function eurTxt(n){ return fNum.format(r2(n||0))+" €"; }
+const tick=()=>new Promise(r=>setTimeout(r,0));
+
+/* ================= Exportación: libro en PDF ================= */
+async function buildPdf(X,prog){
+  prog("Cargando el generador de PDF…"); await loadScript(LIB.jspdf); const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:"mm",format:"a4",compress:true}); const W=210,H=297,M=16,CW=W-2*M; let y=M;
+  const C={ink:[23,26,30],mut:[93,101,110],acc:[194,65,12],acc2:[240,121,58],line:[205,210,203],road:[37,43,49],soft:[246,222,208],pale:[232,235,229],white:[255,255,255],light:[200,205,210]};
+  const tc=c=>doc.setTextColor(c[0],c[1],c[2]), fc=c=>doc.setFillColor(c[0],c[1],c[2]), dc=c=>doc.setDrawColor(c[0],c[1],c[2]);
+  const font=(s,st)=>{ doc.setFont("helvetica",st||"normal"); doc.setFontSize(s); }; const T=pdfSafe;
+  const footer=()=>{ font(8); tc(C.mut); doc.text("Cuaderno de Ruta",M,H-8); doc.text(String(doc.getNumberOfPages()),W-M,H-8,{align:"right"}); };
+  const newPage=()=>{ doc.addPage(); y=M; footer(); };
+  const ensure=h=>{ if(y+h>H-M-6) newPage(); };
+  const para=(txt,sz,st,c)=>{ font(sz,st); tc(c); const step=sz*0.42+0.6; for(const l of doc.splitTextToSize(T(txt),CW)){ ensure(step); doc.text(l,M,y+step*0.8); y+=step; } };
+  const h1=t=>{ ensure(16); font(20,"bold"); tc(C.ink); doc.text(T(t),M,y+8); y+=14; };
+  const h2=t=>{ ensure(11); font(10,"bold"); tc(C.acc); doc.text(T(t.toUpperCase()),M,y+5); y+=8; };
+  const kv=(l,v)=>{ ensure(7); font(10); tc(C.mut); doc.text(T(l),M,y+4.5); font(10,"bold"); tc(C.ink); doc.text(T(v),W-M,y+4.5,{align:"right"}); dc(C.line); doc.setLineWidth(0.2); doc.line(M,y+6.5,W-M,y+6.5); y+=7.5; };
+  const table=(head,rows,widths,align)=>{
+    const rowH=(cells,sz)=>{ font(sz); return Math.max(...cells.map((c,i)=>doc.splitTextToSize(T(c),widths[i]-2).length))*sz*0.42+2.4; };
+    const drawRow=(cells,sz,st,col)=>{ const h=rowH(cells,sz); ensure(h); let x=M; font(sz,st); tc(col);
+      cells.forEach((c,i)=>{ const ls=doc.splitTextToSize(T(c),widths[i]-2); ls.forEach((l,j)=>{ const yy=y+sz*0.42*(j+1); if(align[i]==="r") doc.text(l,x+widths[i]-1,yy,{align:"right"}); else doc.text(l,x+1,yy); }); x+=widths[i]; });
+      dc(C.line); doc.setLineWidth(0.2); doc.line(M,y+h,M+widths.reduce((a,b)=>a+b,0),y+h); y+=h+0.6; };
+    drawRow(head,8,"bold",C.mut); rows.forEach(r=>drawRow(r,9,"normal",C.ink));
+  };
+  const s=X.sum;
+  /* Portada */
+  fc(C.road); doc.rect(0,0,W,H,"F");
+  font(30,"bold"); tc(C.white); doc.text("CUADERNO DE RUTA",M,34);
+  font(12); tc(C.light); doc.text(T(X.label),M,43);
+  if(X.tracks.length){ prog("Dibujando el mapa del viaje…"); await tick(); doc.addImage(mapImage(X.tracks,1500,1000,PAL_DARK),"JPEG",M,54,CW,CW*2/3); }
+  const big=[[fKm.format(s.km)+" km","recorridos"],[String(s.active),"días de viaje"],[eurTxt(s.eur),"gastados"],[s.moving?dur(s.moving):"-","en moto"]];
+  big.forEach(([v,l],i)=>{ const x=M+i*(CW/4); font(16,"bold"); tc(C.acc2); doc.text(T(v),x,200); font(9); tc(C.light); doc.text(T(l),x,206); });
+  font(8); tc(C.light); doc.text(T("Generado el "+longDate(todayStr())),M,H-12);
+  /* Resumen */
+  newPage(); h1("Resumen");
+  kv("Kilómetros",fKm.format(s.km)+" km"); kv("Días con actividad",String(s.active)); kv("Días en moto",String(s.ridden));
+  if(s.moving){ kv("Tiempo en movimiento",dur(s.moving)); kv("Velocidad media",fNum1.format(s.trackKm/(s.moving/3600))+" km/h"); }
+  kv("Gasto total",eurTxt(s.eur)); kv("Media por día",eurTxt(s.active?s.eur/s.active:0)); if(s.km) kv("Coste por km",fNum.format(s.eur/s.km)+" €");
+  const cats=Object.entries(s.byCat).sort((a,b)=>b[1]-a[1]);
+  if(cats.length){ y+=4; h2("En qué se ha ido el dinero"); const mx=Math.max(...cats.map(c=>c[1]));
+    for(const [k,v] of cats){ ensure(7); font(9); tc(C.ink); doc.text(T(CAT[k].n),M,y+4); fc(C.pale); doc.rect(M+38,y+1.2,CW-38-30,3.8,"F");
+      fc(GROUP_RGB[CAT[k].g]); doc.rect(M+38,y+1.2,Math.max(0.8,(CW-68)*v/mx),3.8,"F"); font(9,"bold"); doc.text(T(eurTxt(v)),W-M,y+4.2,{align:"right"}); y+=7; } }
+  const curs=Object.entries(s.byCur).sort((a,b)=>b[1].eur-a[1].eur);
+  if(curs.length){ y+=4; h2("Divisas pagadas"); table(["Divisa","Pagado","En euros","1 € ="],curs.map(([c,v])=>[c,fNum.format(r2(v.amount))+" "+c,eurTxt(v.eur),c==="EUR"?"-":fNum.format(v.amount/v.eur)]),[30,58,50,40],["l","r","r","r"]); }
+  const months={}; for(const d of s.days){ const k=d.date.slice(0,7); const m=months[k]||(months[k]={km:0,eur:0,days:0}); m.km+=d.km||0; m.eur+=dayTotal(d); if(d.km||liveExp(d).length) m.days++; }
+  if(Object.keys(months).length>1){ y+=4; h2("Mes a mes"); table(["Mes","Días","Km","Gasto"],Object.entries(months).map(([k,m])=>[cap(parseYmd(k+"-01").toLocaleDateString("es-ES",{month:"long",year:"numeric"})),String(m.days),fKm.format(m.km),eurTxt(m.eur)]),[70,30,38,40],["l","r","r","r"]); }
+  /* Días */
+  let i=0;
+  for(const date of X.dates){ i++; prog("Preparando día "+i+" de "+X.dates.length+"…"); await tick();
+    const d=getDay(date),t=trackFor(date),ex=liveExp(d),dayPosts=X.postsBy[date]||[];
+    if(i===1) newPage(); else ensure(60);
+    fc(C.soft); doc.rect(M,y,CW,11,"F"); font(12,"bold"); tc(C.ink); doc.text(T(cap(longDate(date))),M+3,y+7.3);
+    const dn=tripDayNum(date); if(dn){ font(9); tc(C.mut); doc.text("Día "+dn,W-M-3,y+7.3,{align:"right"}); } y+=14;
+    if(d.from||d.to||d.km!=null) para((d.from||"-")+" -> "+(d.to||"-")+(d.country?" · "+d.country:"")+(d.km!=null?" · "+fKm.format(d.km)+" km":""),11,"bold",C.ink);
+    if(t){ y+=1; ensure(CW/2+12); doc.addImage(mapImage([t],1400,700,PAL_LIGHT),"JPEG",M,y,CW,CW/2); y+=CW/2+2; para(statsLine(t.stats),8.5,"normal",C.mut); }
+    if(ex.length){ y+=2; table(["Concepto","Detalle","Pagado","En euros"],ex.map(e=>[CAT[e.cat].n,e.desc||"",e.cur==="EUR"?eurTxt(e.amount):fNum.format(e.amount)+" "+e.cur,eurTxt(e.eur)]).concat([["Total","","",eurTxt(dayTotal(d))]]),[34,74,36,34],["l","l","r","r"]); }
+    if(d.notes){ y+=2; h2("Notas"); para(d.notes,10,"normal",C.ink); }
+    for(const p of dayPosts){ y+=3; h2("Diario"+(p.place?" · "+p.place:""));
+      if(p.text) para(p.text,10,"normal",C.ink);
+      const cw=(CW-4)/2;
+      for(let k=0;k<p.photos.length;k+=2){ const pair=[]; for(const ph of p.photos.slice(k,k+2)){ const im=await photoData(ph,1100); if(im) pair.push(im); }
+        if(!pair.length) continue; const dims=pair.map(im=>{ let w=cw,h=w*im.h/im.w; if(h>105){ h=105; w=h*im.w/im.h; } return [w,h]; });
+        const rh=Math.max(...dims.map(x=>x[1])); ensure(rh+4); y+=2;
+        pair.forEach((im,j)=>{ const [w,h]=dims[j]; doc.addImage(im.data,"JPEG",M+j*(cw+4)+(cw-w)/2,y,w,h); }); y+=rh+2; } }
+    y+=4; dc(C.line); doc.setLineWidth(0.3); doc.line(M,y,W-M,y); y+=6;
+  }
+  prog("Componiendo el PDF…"); await tick();
+  return doc.output("blob");
+}
+
+/* ================= Exportación: presentación ================= */
+async function buildPptx(X,prog){
+  prog("Cargando el generador de presentaciones…"); await loadScript(LIB.pptx);
+  const p=new window.PptxGenJS(); p.layout="LAYOUT_WIDE"; p.title="Cuaderno de Ruta";
+  const F="Calibri",ROAD="252B31",ACC="C2410C",ACC2="F0793A",INK="171A1E",MUT="5D656E",BG="F2F3EF",WH="FFFFFF",LINE="D3D7D1";
+  const strip=d=>d.replace(/^data:/,""); const s=X.sum;
+  const title=(sl,t)=>sl.addText(t,{x:0.5,y:0.35,w:12.3,h:0.7,fontFace:F,fontSize:26,bold:true,color:INK});
+  /* Portada */
+  let sl=p.addSlide(); sl.background={color:ROAD};
+  sl.addText("CUADERNO DE RUTA",{x:0.6,y:0.7,w:6.2,h:0.9,fontFace:F,fontSize:38,bold:true,color:WH});
+  sl.addText(X.label,{x:0.6,y:1.6,w:6.2,h:0.5,fontFace:F,fontSize:18,color:"C9CED3"});
+  [[fKm.format(s.km)+" km","recorridos"],[String(s.active),"días de viaje"],[eurTxt(s.eur),"gastados"],[s.moving?dur(s.moving):"—","en moto"]].forEach(([v,l],i)=>{
+    sl.addText(v,{x:0.6,y:2.7+i*1.05,w:6,h:0.6,fontFace:F,fontSize:28,bold:true,color:ACC2}); sl.addText(l,{x:0.6,y:3.25+i*1.05,w:6,h:0.35,fontFace:F,fontSize:13,color:"C9CED3"}); });
+  if(X.tracks.length){ prog("Dibujando el mapa del viaje…"); await tick(); sl.addImage({data:strip(mapImage(X.tracks,1500,1250,PAL_DARK)),x:7.0,y:1.0,w:5.8,h:4.83}); }
+  /* Gastos */
+  const cats=Object.entries(s.byCat).sort((a,b)=>a[1]-b[1]);
+  if(cats.length){ sl=p.addSlide(); sl.background={color:BG}; title(sl,"En qué se ha ido el dinero");
+    sl.addChart(p.ChartType.bar,[{name:"Gasto",labels:cats.map(c=>CAT[c[0]].n),values:cats.map(c=>r2(c[1]))}],{x:0.5,y:1.3,w:7.6,h:5.8,barDir:"bar",chartColors:[ACC],
+      showValue:true,dataLabelFormatCode:'#,##0 "€"',dataLabelFontSize:11,dataLabelColor:INK,catAxisLabelFontSize:12,catAxisLabelColor:INK,catAxisLabelFontFace:F,valAxisHidden:true,valGridLine:{style:"none"},showLegend:false});
+    const hd=t=>({text:t,options:{bold:true,color:MUT,fill:{color:BG}}});
+    const rows=[[hd("Divisa"),hd("Pagado"),hd("En €")]].concat(Object.entries(s.byCur).sort((a,b)=>b[1].eur-a[1].eur).slice(0,12).map(([c,v])=>[c,{text:fNum.format(r2(v.amount)),options:{align:"right"}},{text:eurTxt(v.eur),options:{align:"right"}}]));
+    rows.push([{text:"Total",options:{bold:true}},"",{text:eurTxt(s.eur),options:{bold:true,align:"right"}}]);
+    sl.addTable(rows,{x:8.5,y:1.3,w:4.3,colW:[1.0,1.7,1.6],fontFace:F,fontSize:12,color:INK,border:{type:"solid",pt:0.5,color:LINE},fill:{color:WH}}); }
+  /* Etapas */
+  const st=X.dates.map(date=>{ const d=getDay(date); return [cap(shortDate(date)),(d.from||"—")+" → "+(d.to||"—"),d.km!=null?fKm.format(d.km):"—",eurTxt(dayTotal(d))]; });
+  const chunks=[]; for(let k=0;k<st.length;k+=12) chunks.push(st.slice(k,k+12));
+  chunks.forEach((ch,k)=>{ sl=p.addSlide(); sl.background={color:BG}; title(sl,"Etapas"+(chunks.length>1?" ("+(k+1)+"/"+chunks.length+")":""));
+    const hd=t=>({text:t,options:{bold:true,color:MUT,fill:{color:BG}}});
+    sl.addTable([[hd("Fecha"),hd("Recorrido"),hd("Km"),hd("Gasto")]].concat(ch.map(r=>[r[0],r[1],{text:r[2],options:{align:"right"}},{text:r[3],options:{align:"right"}}])),
+      {x:0.5,y:1.3,w:12.3,colW:[2.0,7.2,1.4,1.7],fontFace:F,fontSize:12,color:INK,border:{type:"solid",pt:0.5,color:LINE},fill:{color:WH}}); });
+  /* Publicaciones del diario */
+  let n=0;
+  for(const post of X.posts){ n++; prog("Diapositiva del diario "+n+" de "+X.posts.length+"…"); await tick();
+    sl=p.addSlide(); sl.background={color:WH};
+    const ims=[]; for(const ph of post.photos.slice(0,4)){ const im=await photoData(ph,1600); if(im) ims.push(im); }
+    const A={x:0.35,y:0.35,w:7.6,h:6.8}; const cells=ims.length===1?[A]:ims.length===2?[{x:A.x,y:A.y,w:A.w/2-0.05,h:A.h},{x:A.x+A.w/2+0.05,y:A.y,w:A.w/2-0.05,h:A.h}]
+      :[0,1,2,3].map(i=>({x:A.x+(i%2)*(A.w/2+0.05),y:A.y+Math.floor(i/2)*(A.h/2+0.05),w:A.w/2-0.05,h:A.h/2-0.05}));
+    ims.forEach((im,i)=>{ const c=cells[i]; const r=im.w/im.h; let w=c.w,h=w/r; if(h>c.h){ h=c.h; w=h*r; } sl.addImage({data:strip(im.data),x:c.x+(c.w-w)/2,y:c.y+(c.h-h)/2,w,h}); });
+    const tx=ims.length?8.3:0.6, tw=ims.length?4.6:12.1; const dn=tripDayNum(post.date); const t=post.route?trackFor(post.date):null;
+    sl.addText(cap(longDate(post.date))+(dn?"  ·  día "+dn:""),{x:tx,y:0.45,w:tw,h:0.4,fontFace:F,fontSize:12,color:MUT});
+    sl.addText(post.place||"Diario",{x:tx,y:0.85,w:tw,h:0.75,fontFace:F,fontSize:24,bold:true,color:INK,fit:"shrink"});
+    if(post.text) sl.addText(post.text.length>1400?post.text.slice(0,1400)+"…":post.text,{x:tx,y:1.7,w:tw,h:t?2.6:5.2,fontFace:F,fontSize:13,color:INK,valign:"top",fit:"shrink"});
+    if(post.photos.length>4) sl.addText("+"+(post.photos.length-4)+" fotos más en la app",{x:A.x,y:7.1,w:A.w,h:0.3,fontFace:F,fontSize:10,color:MUT});
+    if(t){ sl.addText(fNum1.format(t.stats.km)+" km"+(t.stats.moving?" · "+dur(t.stats.moving):"")+(t.stats.avg?" · media "+fNum1.format(t.stats.avg)+" km/h":""),{x:tx,y:4.4,w:tw,h:0.35,fontFace:F,fontSize:11,bold:true,color:ACC});
+      sl.addImage({data:strip(mapImage([t],920,520,PAL_LIGHT)),x:tx,y:4.8,w:tw,h:tw*520/920}); } }
+  /* Rutas sin publicación */
+  const lone=X.dates.filter(d=>trackFor(d)&&!(X.postsBy[d]||[]).some(p=>p.route));
+  for(let k=0;k<lone.length;k+=2){ prog("Mapas de rutas…"); await tick(); sl=p.addSlide(); sl.background={color:BG}; title(sl,"Rutas");
+    lone.slice(k,k+2).forEach((date,j)=>{ const t=trackFor(date),d=getDay(date),x=0.5+j*6.25;
+      sl.addImage({data:strip(mapImage([t],1200,760,PAL_LIGHT)),x,y:1.3,w:6.0,h:3.8});
+      sl.addText(cap(shortDate(date))+" · "+(d.from||"—")+" → "+(d.to||"—"),{x,y:5.2,w:6.0,h:0.45,fontFace:F,fontSize:15,bold:true,color:INK});
+      sl.addText(statsLine(t.stats),{x,y:5.65,w:6.0,h:0.8,fontFace:F,fontSize:11,color:MUT,valign:"top"}); }); }
+  prog("Componiendo la presentación…"); await tick();
+  return await p.write({outputType:"blob"});
+}
+
+/* ================= Navegación y arranque ================= */
+document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>{ ui.tab=b.dataset.tab; ui.needsRender=false; render(); window.scrollTo(0,0); });
+document.getElementById("syncBtn").onclick=()=>{ ui.tab="datos"; render(); window.scrollTo(0,0); };
+document.getElementById("main").addEventListener("click",e=>{
+  const per=e.target.closest("[data-per]"); if(per){ ui.period=per.dataset.per; render(); return; }
+  if(e.target.closest("#perPrev")){ ui.anchor=shiftAnchor(ui.period,ui.anchor,-1); render(); return; }
+  if(e.target.closest("#perNext")){ ui.anchor=shiftAnchor(ui.period,ui.anchor,1); render(); return; }
+  const go=e.target.closest("[data-goto]"); if(go){ ui.date=go.dataset.goto; ui.tab="dia"; ui.editId=null; render(); window.scrollTo(0,0); }
+});
+async function boot(){
+  idb=await idbOpen(); idbOk=!!idb;
+  if(idb){ try{ for(const [k,v] of await idbEntries("kv")){
+      if(k==="__pending"){ if(Array.isArray(v)) v.forEach(x=>pending.add(x)); }
+      else if(k==="__meta"){ if(v&&typeof v==="object") meta={...meta,...v}; }
+      else { const s=sanitize(k,v); if(s) R.set(k,s); } } }catch(e){} }
+  try{ const raw=localStorage.getItem(MIRROR); if(raw){ const o=JSON.parse(raw);
+      for(const [k,v] of Object.entries(o.recs||{})){ const s=sanitize(k,v); if(!s) continue; const l=R.get(k)||null; const m=mergeRec(k,l,s); if(!l||!eq(m,l)){ R.set(k,m); dirty.add(k); } }
+      (o.pending||[]).forEach(x=>pending.add(x)); if(!idb&&o.meta) meta={...meta,...o.meta}; } }catch(e){}
+  try{ const dr=JSON.parse(localStorage.getItem(DRAFT_KEY)||"null"); if(dr&&Array.isArray(dr.photos)&&DATE_RE.test(dr.date)) ui.draft=dr; }catch(e){}
+  loadCfg(); if(!cfg.key){ cfg.key=genKey(); }
+  booted=true; saveCfg(); persist(); render(); takeSnapshot(false);
+  try{ if(navigator.storage&&navigator.storage.persist){ persistent=await navigator.storage.persisted(); if(!persistent) persistent=await navigator.storage.persist(); } }catch(e){}
+  if("serviceWorker" in navigator){ try{ await navigator.serviceWorker.register("sw.js"); }catch(e){} }
+  setTimeout(runSync,1500);
+}
+boot();
+</script>
+</body>
+</html>
